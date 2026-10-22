@@ -21,7 +21,7 @@ Como usar:
 • Eu respondo com o texto pronto para o WhatsApp. É só segurar a mensagem e tocar em Copiar.
 • Os botões trocam o rodapé (${GRUPOS.jb.nome}, ${GRUPOS.ind.nome} ou sem rodapé) e o destino.
 • Em "Para Telegram" eu mando a oferta já formatada, pronta para encaminhar no grupo.
-• "Gerar arte" cria a imagem da oferta com a capa do jogo e o preço.
+• "Gerar arte" cria a imagem da oferta com a capa do jogo e o preço. Pra trocar a capa, responda à arte com outra foto.
 
 Se você colar um texto do WhatsApp (com *negrito*), eu já mostro a versão para o Telegram.`;
 
@@ -132,8 +132,39 @@ async function arte(cb, original, destino, grupo) {
     reply_parameters: { message_id: original.message_id, allow_sending_without_reply: true }
   }, png);
   if (!capa) {
-    await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não achei a capa do jogo pelo link. Se quiser a capa na arte, mande a oferta com a foto.' });
+    await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não achei a capa do jogo pelo link. Responda a esta arte com a foto da capa que eu refaço.' });
+  } else {
+    await avisarFotoPequena(original, cb.message.chat.id);
   }
+}
+
+// A capa ocupa ~530 px de altura na arte; abaixo disso a foto fica borrada
+async function avisarFotoPequena(msg, chatId) {
+  const f = msg.photo && msg.photo[msg.photo.length - 1];
+  if (f && (f.height < 450 || f.width < 280)) {
+    await tg('sendMessage', { chat_id: chatId, text: `A foto da capa é pequena (${f.width}x${f.height}) e pode ficar borrada na arte. Se tiver uma maior, responda à arte com ela.` });
+  }
+}
+
+// Você respondeu a uma mensagem do bot com uma foto: refaz a arte usando essa foto como capa
+async function trocarCapa(msg) {
+  const base = msg.reply_to_message;
+  const c = conteudo(base);
+  if (!c || !c.texto.trim()) {
+    await tg('sendMessage', { chat_id: msg.chat.id, text: 'Responda a uma oferta ou arte minha com a foto, que eu uso ela como capa.' });
+    return;
+  }
+  const capa = await baixarArquivo(msg.photo[msg.photo.length - 1].file_id);
+  // O texto do bot pode ter *negrito* de WhatsApp; tira as marcas pra ler nome e preço
+  const png = await gerarArte({ ...dadosDaOferta(c.texto.replace(/[*_~]/g, '')), capa });
+  const legenda = c.texto.length <= LIMITE_LEGENDA;
+  await enviarFoto({
+    chat_id: msg.chat.id,
+    caption: legenda ? c.texto : undefined,
+    caption_entities: legenda && c.entities.length ? c.entities : undefined,
+    reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true }
+  }, png);
+  await avisarFotoPequena(msg, msg.chat.id);
 }
 
 async function botao(cb) {
@@ -184,7 +215,9 @@ export default async function handler(req, res) {
       } else if (cmd === '/start' || cmd === '/ajuda') {
         await tg('sendMessage', { chat_id: msg.chat.id, text: AJUDA });
       } else {
-        await novaOferta(msg);
+        const respostaComFoto = msg.photo && !msg.caption && msg.reply_to_message && msg.reply_to_message.from && msg.reply_to_message.from.is_bot;
+        if (respostaComFoto) await trocarCapa(msg);
+        else await novaOferta(msg);
       }
     }
   } catch (e) {

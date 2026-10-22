@@ -57,3 +57,11 @@ test('mensagem com formatação do Telegram vai para WhatsApp por padrão', () =
   assert.equal(sentidoPadrao('*x* oi', [{ type: 'bold', offset: 4, length: 2 }]), 'wa');
   assert.equal(sentidoPadrao('só texto', []), 'wa');
 });
+
+test('arte: preço principal define à vista ou parcelado', async () => {
+  const { dadosDaOferta } = await import('../lib/arte.js');
+  const pix = dadosDaOferta('[Amazon] Mario Kart World\n👉 Switch 2: jogobara.to/p3shP\n• R$ 233,92 no pix\n• R$ 269,91 em até 6x');
+  assert.deepEqual([pix.titulo, pix.preco, pix.condicao], ['Mario Kart World', '233,92', 'à vista']);
+  const parc = dadosDaOferta('DQ III\n• R$ 183,66 em até 6x');
+  assert.deepEqual([parc.preco, parc.condicao], ['183,66', 'parcelado']);
+});
