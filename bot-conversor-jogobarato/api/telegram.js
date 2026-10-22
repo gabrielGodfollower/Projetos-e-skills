@@ -307,7 +307,8 @@ export default async function handler(req, res) {
       if (cmd === '/id') {
         await tg('sendMessage', { chat_id: msg.chat.id, text: `Seu ID do Telegram: ${msg.from.id}` });
       } else if (!permitido(msg.from.id)) {
-        await tg('sendMessage', { chat_id: msg.chat.id, text: 'Este bot é privado.' });
+        // Quem ainda não foi liberado já recebe o próprio ID pra passar pro admin
+        await tg('sendMessage', { chat_id: msg.chat.id, text: `Este bot é só da equipe do Jogo Barato. Pra liberar, mande este número pra quem cuida do bot: ${msg.from.id}` });
       } else if (cmd === '/start' || cmd === '/ajuda') {
         await tg('sendMessage', { chat_id: msg.chat.id, text: AJUDA });
       } else {
