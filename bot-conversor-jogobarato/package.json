@@ -2,6 +2,14 @@
   "name": "bot-conversor-jogobarato",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=18" },
-  "scripts": { "test": "node --test" }
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "satori": "^0.18.3"
+  }
 }

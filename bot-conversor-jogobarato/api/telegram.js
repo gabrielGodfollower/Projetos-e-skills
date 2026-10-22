@@ -5,8 +5,10 @@
 //    (WhatsApp ou Telegram).
 // 3. Ao tocar num botão, o bot relê a mensagem original (a que ele respondeu)
 //    e edita a resposta. Assim nada precisa ser guardado em banco de dados.
+// 4. "Gerar arte" monta a imagem da oferta no fundo do Jogo Barato.
 import { converter, sentidoPadrao, GRUPOS } from '../lib/conversor.js';
-import { tg } from '../lib/telegram.js';
+import { tg, baixarArquivo, enviarFoto } from '../lib/telegram.js';
+import { gerarArte, dadosDaOferta, capaDoLink } from '../lib/arte.js';
 
 const LIMITE_LEGENDA = 1024;
 const LIMITE_TEXTO = 4096;
@@ -19,6 +21,7 @@ Como usar:
 • Eu respondo com o texto pronto para o WhatsApp. É só segurar a mensagem e tocar em Copiar.
 • Os botões trocam o rodapé (${GRUPOS.jb.nome}, ${GRUPOS.ind.nome} ou sem rodapé) e o destino.
 • Em "Para Telegram" eu mando a oferta já formatada, pronta para encaminhar no grupo.
+• "Gerar arte" cria a imagem da oferta com a capa do jogo e o preço.
 
 Se você colar um texto do WhatsApp (com *negrito*), eu já mostro a versão para o Telegram.`;
 
@@ -39,7 +42,8 @@ function teclado(destino, grupo) {
       [
         { text: marca(destino === 'wa', 'Para WhatsApp'), callback_data: `wa|${grupo}` },
         { text: marca(destino === 'tg', 'Para Telegram'), callback_data: `tg|${grupo}` }
-      ]
+      ],
+      [{ text: '🖼 Gerar arte', callback_data: `arte|${destino}|${grupo}` }]
     ]
   };
 }
@@ -87,14 +91,62 @@ async function novaOferta(msg) {
   }
 }
 
+// Capa do jogo: a foto da própria oferta ou, se não tiver, a imagem da página do link
+async function capaDaOferta(msg, texto, entities) {
+  if (msg.photo && msg.photo.length) {
+    try { return await baixarArquivo(msg.photo[msg.photo.length - 1].file_id); } catch (e) { console.error(e); }
+  }
+  const links = [];
+  if (msg.link_preview_options && msg.link_preview_options.url) links.push(msg.link_preview_options.url);
+  for (const e of entities) {
+    if (e.type === 'text_link') links.push(e.url);
+    if (e.type === 'url') links.push(texto.slice(e.offset, e.offset + e.length));
+  }
+  links.push(...(texto.match(/https?:\/\/\S+/g) || []));
+  for (const url of [...new Set(links)].slice(0, 2)) {
+    const capa = await capaDoLink(url);
+    if (capa) return capa;
+  }
+  return null;
+}
+
+async function arte(cb, original, destino, grupo) {
+  await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Gerando a arte...' });
+  const c = conteudo(original);
+  const capa = await capaDaOferta(original, c.texto, c.entities);
+  let png;
+  try {
+    png = await gerarArte({ ...dadosDaOferta(c.texto), capa });
+  } catch (e) {
+    console.error(e);
+    await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não consegui gerar a arte dessa oferta.' });
+    return;
+  }
+  const { saida, parse_mode } = montar(original, destino, grupo);
+  const legenda = saida.length <= LIMITE_LEGENDA;
+  await enviarFoto({
+    chat_id: cb.message.chat.id,
+    caption: legenda ? saida : undefined,
+    parse_mode: legenda ? parse_mode : undefined,
+    reply_markup: teclado(destino, grupo),
+    reply_parameters: { message_id: original.message_id, allow_sending_without_reply: true }
+  }, png);
+  if (!capa) {
+    await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não achei a capa do jogo pelo link. Se quiser a capa na arte, mande a oferta com a foto.' });
+  }
+}
+
 async function botao(cb) {
-  const [destino, grupo] = (cb.data || '').split('|');
+  const partes = (cb.data || '').split('|');
+  const ehArte = partes[0] === 'arte';
+  const [destino, grupo] = ehArte ? partes.slice(1) : partes;
   const resposta = cb.message;
   const original = resposta && resposta.reply_to_message;
   if (!original || !conteudo(original)) {
     await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Não achei a oferta original. Mande ela de novo.', show_alert: true });
     return;
   }
+  if (ehArte) return arte(cb, original, destino, grupo);
   const { saida, parse_mode } = montar(original, destino, grupo);
   const comum = { chat_id: resposta.chat.id, message_id: resposta.message_id, parse_mode, reply_markup: teclado(destino, grupo) };
   try {

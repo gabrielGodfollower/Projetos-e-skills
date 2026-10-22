@@ -9,6 +9,8 @@ Bot do Telegram que faz o mesmo que o conversor em HTML: pega uma oferta, conver
 3. Os botões trocam o rodapé (**Jogo Barato**, **JB Indica** ou **Sem rodapé**) e o destino (**Para WhatsApp** ou **Para Telegram**).
 4. Em **Para Telegram** a oferta volta já formatada (negrito, riscado, spoiler, links), pronta para encaminhar no grupo.
 
+**Gerar arte:** monta a imagem da oferta no fundo do Jogo Barato (`assets/fundo-arte.png`), com a capa do jogo, o nome, a loja e o preço. A capa vem da foto da oferta ou, se não tiver foto, da imagem da página do link. O preço é o primeiro `R$` do texto.
+
 Se você colar um texto do WhatsApp (com `*negrito*`, `_itálico_`, `~riscado~`), o bot já abre na versão para o Telegram.
 
 Comandos: `/ajuda` e `/id` (mostra seu ID do Telegram).
@@ -35,4 +37,5 @@ npm test
 
 - `lib/conversor.js`: regras de conversão (as mesmas do conversor em HTML).
 - `api/telegram.js`: webhook que recebe as mensagens e os botões.
+- `lib/arte.js`: monta a arte da oferta (satori + resvg).
 - `api/setup.js`: liga o webhook e cadastra os comandos.
