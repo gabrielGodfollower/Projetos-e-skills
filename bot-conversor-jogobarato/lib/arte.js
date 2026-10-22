@@ -7,11 +7,11 @@ import { Resvg } from '@resvg/resvg-js';
 const ler = nome => readFileSync(new URL('../assets/' + nome, import.meta.url));
 const FUNDO = 'data:image/png;base64,' + ler('fundo-arte.png').toString('base64');
 const FONTES = [
-  { name: 'Teko', data: ler('teko-600.ttf'), weight: 600, style: 'normal' },
-  { name: 'Inter', data: ler('inter-700.ttf'), weight: 700, style: 'normal' }
+  { name: 'Teko', data: ler('teko-500.ttf'), weight: 500, style: 'normal' },
+  { name: 'Saira', data: ler('saira-700.ttf'), weight: 700, style: 'normal' }
 ];
 const LARGURA = 1197, ALTURA = 999;
-const AZUL = '#0a2a6b';
+const AZUL_TEXTO = '#0a1b37';
 
 // ---------- leitura do texto da oferta ----------
 export function dadosDaOferta(texto) {
@@ -22,8 +22,11 @@ export function dadosDaOferta(texto) {
   if (m) { loja = m[1]; titulo = titulo.slice(m[0].length); }
   // Tira emojis e marcadores do começo do título
   titulo = titulo.replace(/^[^\p{L}\p{N}]+/u, '').trim();
-  const p = texto.match(/R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)/);
-  return { titulo, loja, preco: p ? p[1] : '' };
+  // Padrão do Jogo Barato: "à vista" ou "parcelado", conforme a linha do preço
+  const linhaPreco = linhas.find(l => /R\$\s?\d/.test(l)) || '';
+  const p = linhaPreco.match(/R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)/);
+  const parcelado = /\d+\s*x\b|parcelad|em até/i.test(linhaPreco) && !/à vista|a vista|pix|boleto/i.test(linhaPreco);
+  return { titulo, loja, preco: p ? p[1] : '', condicao: parcelado ? 'parcelado' : 'à vista' };
 }
 
 // ---------- capa do jogo ----------
@@ -56,70 +59,55 @@ export async function capaDoLink(url) {
 // ---------- montagem ----------
 const h = (type, style, children) => ({ type, props: { style: { display: 'flex', ...style }, children } });
 
+// Título numa linha, como no Photoshop; diminui a fonte se for comprido
 function tamanhoTitulo(t) {
-  if (t.length <= 28) return 56;
-  if (t.length <= 50) return 48;
-  if (t.length <= 80) return 40;
-  return 34;
+  if (t.length <= 50) return 24;
+  if (t.length <= 62) return 21;
+  return 19;
 }
 
-export async function gerarArte({ titulo, loja, preco, capa }) {
+export async function gerarArte({ titulo, preco, condicao = 'à vista', capa }) {
   const filhos = [
-    { type: 'img', props: { src: FUNDO, width: LARGURA, height: ALTURA, style: { position: 'absolute', left: 0, top: 0 } } }
+    { type: 'img', props: { src: FUNDO, width: LARGURA, height: ALTURA, style: { position: 'absolute', left: 0, top: 0 } } },
+    h('div', {
+      position: 'absolute', left: 33, top: 212, width: 1040,
+      color: AZUL_TEXTO, fontFamily: 'Saira', fontSize: tamanhoTitulo(titulo), lineHeight: 1.25
+    }, titulo)
   ];
 
+  // Capa centralizada no meio da arte
   const tipo = capa && tipoImagem(capa);
   if (tipo) {
     filhos.push({
       type: 'img',
       props: {
         src: `data:${tipo};base64,${capa.toString('base64')}`,
-        style: { position: 'absolute', left: 60, top: 225, width: 500, height: 620, objectFit: 'contain' }
+        style: { position: 'absolute', left: 249, top: 343, width: 700, height: 527, objectFit: 'contain' }
       }
     });
   }
 
-  // Nome do jogo e loja: ao lado da capa, ou centralizado se não tiver capa
-  const esquerda = tipo ? 600 : 80;
-  const largura = tipo ? 460 : 980;
-  const tam = tamanhoTitulo(titulo);
-  filhos.push(h('div', {
-    position: 'absolute', left: esquerda, top: 240, width: largura, height: 600,
-    display: 'flex', flexDirection: 'column', justifyContent: 'center',
-    alignItems: tipo ? 'flex-start' : 'center'
-  }, [
-    ...(loja ? [h('div', {
-      display: 'flex', background: AZUL, color: '#fff', fontFamily: 'Inter', fontSize: 26,
-      padding: '6px 18px', borderRadius: 999, marginBottom: 22
-    }, loja)] : []),
-    h('div', {
-      display: 'flex', color: AZUL, fontFamily: 'Inter', fontSize: tam, lineHeight: 1.15,
-      textAlign: tipo ? 'left' : 'center', lineClamp: 6
-    }, titulo)
-  ]));
-
   // Caixa do preço: redesenhada por cima da do fundo, que já tem "R$" escrito
   if (preco) {
-    const tamPreco = preco.length <= 6 ? 96 : preco.length <= 8 ? 84 : 72;
+    const tamPreco = preco.length <= 6 ? 64 : preco.length <= 8 ? 58 : 50;
     filhos.push(h('div', {
       position: 'absolute', left: 806, top: 866, width: 356, height: 150,
       background: 'linear-gradient(90deg, #00296c, #003486)', borderRadius: 22,
       transform: 'skewX(-9deg)'
     }, []));
     filhos.push(h('div', {
-      position: 'absolute', left: 806, top: 868, width: 330, height: 118,
-      display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', color: '#fff'
+      position: 'absolute', left: 806, top: 872, width: 327, height: 118,
+      flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center',
+      color: '#fff', fontFamily: 'Teko'
     }, [
-      h('div', { display: 'flex', fontFamily: 'Teko', fontSize: 34, lineHeight: 0.9 }, 'a partir de'),
-      h('div', { display: 'flex', alignItems: 'baseline', fontFamily: 'Teko', lineHeight: 0.9 }, [
-        h('div', { display: 'flex', fontSize: tamPreco * 0.55, marginRight: 8 }, 'R$'),
-        h('div', { display: 'flex', fontSize: tamPreco }, preco)
-      ])
+      h('div', { fontSize: 29, lineHeight: 0.85 }, 'a partir de'),
+      h('div', { fontSize: tamPreco, lineHeight: 0.85, marginTop: 4 }, 'R$ ' + preco),
+      h('div', { fontSize: 29, lineHeight: 0.85 }, condicao)
     ]));
   }
 
   const svg = await satori(
-    h('div', { position: 'relative', display: 'flex', width: LARGURA, height: ALTURA, background: '#fff' }, filhos),
+    h('div', { position: 'relative', width: LARGURA, height: ALTURA, background: '#fff' }, filhos),
     { width: LARGURA, height: ALTURA, fonts: FONTES }
   );
   return new Resvg(svg, { fitTo: { mode: 'width', value: LARGURA } }).render().asPng();
