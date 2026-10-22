@@ -115,6 +115,6 @@ test('oferta do canal do Telegram ida e volta com o rodapé dos canais', () => {
   ];
   return import('../lib/conversor.js').then(({ semRodape }) => {
     assert.equal(converter({ ...semRodape(t, e), destino: 'tg', grupo: 'jb' }),
-      '🔥 [Amazon] DRAGON QUEST III\n\n👉 https://jogobara.to/DtrM0\n• R$ 183,66 em até 6x\n\n✈️ <i>Envio Internacional. Taxas Inclusas.</i>\n\n<b>Canais de Promoções do <a href="https://jogobara.to/M05ex">Jogo Barato</a></b>');
+      '🔥 [Amazon] DRAGON QUEST III\n\n👉 https://jogobara.to/DtrM0\n• R$ 183,66 em até 6x\n\n✈️ <i>Envio Internacional. Taxas Inclusas.</i>\n\n<b>Canais de Promoções do <a href="https://www.jogobarato.com.br/redes-sociais">Jogo Barato</a></b>');
   });
 });

@@ -10,7 +10,7 @@ export const GRUPOS = {
     nome: 'Jogo Barato',
     titulo: 'Grupo de Promoções do Jogo Barato:',
     link: process.env.LINK_JB || 'https://jogobara.to/M05ex',
-    linkTelegram: process.env.LINK_TG_JB || process.env.LINK_JB || 'https://jogobara.to/M05ex'
+    linkTelegram: process.env.LINK_TG_JB || 'https://www.jogobarato.com.br/redes-sociais'
   },
   ind: {
     nome: 'JB Indica',
