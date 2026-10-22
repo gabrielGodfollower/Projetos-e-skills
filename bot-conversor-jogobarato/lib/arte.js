@@ -138,14 +138,14 @@ const JOGO_BARATO = {
 // ---------- modelo JB Indica ----------
 // Título centralizado, preço em preto à direita acima do produto, produto embaixo
 const JB_INDICA = {
-  largura: 1200, altura: 1016, fundo: png64('fundo-jbindica.png'),
+  largura: 1200, altura: 1000, fundo: png64('fundo-jbindica.png'),
   camadas({ titulo, preco, condicao, capa, tipo }) {
     const tam = titulo.length <= 45 ? 39 : titulo.length <= 60 ? 32 : 27;
     const c = [h('div', {
       position: 'absolute', left: 60, top: 256, width: 1080, justifyContent: 'center', textAlign: 'center',
       color: '#2b2b2b', fontFamily: 'Outfit', fontWeight: 500, fontSize: tam, lineHeight: 1.2
     }, titulo)];
-    if (tipo) c.push(capaImg(capa, tipo, { left: 200, top: 470, width: 800, height: 520 }));
+    if (tipo) c.push(capaImg(capa, tipo, { left: 200, top: 470, width: 800, height: 510 }));
     if (preco) {
       c.push(h('div', {
         position: 'absolute', right: 30, top: 396, flexDirection: 'column', alignItems: 'flex-end',
