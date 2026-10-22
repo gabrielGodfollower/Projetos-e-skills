@@ -50,6 +50,12 @@ function conteudo(msg) {
   return null;
 }
 
+// No Telegram mantém a prévia do link como na oferta original; no WhatsApp tira, pra copiar mais fácil
+function previa(original, destino) {
+  if (destino !== 'tg') return { is_disabled: true };
+  return original.link_preview_options || {};
+}
+
 // Monta a resposta; parse_mode só no Telegram, para o WhatsApp vai texto puro
 function montar(original, destino, grupo) {
   const c = conteudo(original);
@@ -77,7 +83,7 @@ async function novaOferta(msg) {
     // Copia a foto/vídeo com a legenda convertida
     await tg('copyMessage', { ...base, from_chat_id: msg.chat.id, message_id: msg.message_id, caption: saida });
   } else {
-    await tg('sendMessage', { ...base, text: saida.slice(0, LIMITE_TEXTO), link_preview_options: { is_disabled: true } });
+    await tg('sendMessage', { ...base, text: saida.slice(0, LIMITE_TEXTO), link_preview_options: previa(msg, destino) });
   }
 }
 
@@ -99,7 +105,7 @@ async function botao(cb) {
       }
       await tg('editMessageCaption', { ...comum, caption: saida });
     } else {
-      await tg('editMessageText', { ...comum, text: saida.slice(0, LIMITE_TEXTO), link_preview_options: { is_disabled: true } });
+      await tg('editMessageText', { ...comum, text: saida.slice(0, LIMITE_TEXTO), link_preview_options: previa(original, destino) });
     }
   } catch (e) {
     if (!/not modified/i.test(e.descricao || '')) throw e;
