@@ -12,6 +12,8 @@ Bot do Telegram que faz o mesmo que o conversor em HTML: pega uma oferta, conver
 
 A arte usa o fundo `assets/fundo-arte.png`, título em Saira, preço em Teko Medium. O primeiro preço da oferta define o texto embaixo: "no pix"/"à vista" vira **à vista**, "em até 6x" vira **parcelado**.
 
+**Encurtador:** com `YOURLS_SIGNATURE` configurado, os links de loja (Amazon, Mercado Livre...) viram links `jogobara.to` no YOURLS do Jogo Barato. Links que já são jogobara.to, Telegram ou WhatsApp ficam como estão. Pegue o token em YOURLS > **Tools** > *Secure passwordless API call* (o "signature token").
+
 Comandos: `/ajuda` e `/id` (mostra seu ID do Telegram).
 
 ## Colocar no ar (grátis, na Vercel)
@@ -21,6 +23,7 @@ Comandos: `/ajuda` e `/id` (mostra seu ID do Telegram).
 3. **Variáveis** (Settings > Environment Variables):
    - `TELEGRAM_BOT_TOKEN`: o token do BotFather.
    - `TELEGRAM_WEBHOOK_SECRET`: uma senha que você inventa, só letras, números, `_` e `-` (ex.: `jb_conversor_8f3k2`).
+   - `YOURLS_SIGNATURE` (opcional): token do YOURLS para encurtar os links.
    - `ALLOWED_USERS` (opcional): IDs de quem pode usar, separados por vírgula. Sem isso, qualquer pessoa que achar o bot consegue usar.
 4. Faça o deploy (ou **Redeploy** depois de colocar as variáveis).
 5. **Ligar o bot:** abra no navegador `https://SEU-PROJETO.vercel.app/api/setup?segredo=SUA_SENHA`. Deve aparecer "Pronto! O bot @... está ligado".

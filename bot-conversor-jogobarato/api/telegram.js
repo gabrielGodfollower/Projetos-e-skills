@@ -6,9 +6,11 @@
 // 3. Ao tocar num botão, o bot relê a mensagem original (a que ele respondeu)
 //    e edita a resposta. Assim nada precisa ser guardado em banco de dados.
 // 4. Respondendo à arte com outra foto, o bot troca a capa.
+// 5. Links de lojas viram links jogobara.to (YOURLS), se YOURLS_SIGNATURE estiver configurado.
 import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js';
 import { tg, baixarArquivo, enviarFoto, trocarFoto } from '../lib/telegram.js';
 import { gerarArte, dadosDaOferta, capaDoLink } from '../lib/arte.js';
+import { encurtadorLigado, encurtar, deveEncurtar, linksEmOrdem, trocarLinks } from '../lib/encurtador.js';
 
 const LIMITE_LEGENDA = 1024;
 const LIMITE_TEXTO = 4096;
@@ -61,11 +63,47 @@ function previa(original, destino) {
   return original.link_preview_options || {};
 }
 
-// Monta a resposta; parse_mode só no Telegram, para o WhatsApp vai texto puro
-function montar(original, destino, grupo) {
+// Links já encurtados numa resposta anterior do bot: pareia, na ordem, os links da
+// oferta com os da resposta, pra não pedir ao YOURLS de novo a cada botão
+function linksJaEncurtados(original, resposta) {
+  const mapa = new Map();
+  const co = conteudo(original), cr = resposta && conteudo(resposta);
+  if (!co || !cr) return mapa;
+  const lo = linksEmOrdem(co.texto, co.entities), lr = linksEmOrdem(cr.texto, cr.entities);
+  if (lo.length !== lr.length) return mapa;
+  lo.forEach((l, i) => { if (deveEncurtar(l.url) && !deveEncurtar(lr[i].url)) mapa.set(l.url, lr[i].url); });
+  return mapa;
+}
+
+// Texto da oferta com os links de loja trocados por jogobara.to
+async function conteudoEncurtado(original, resposta) {
   const c = conteudo(original);
+  if (!encurtadorLigado()) return { ...c, falhas: 0 };
+  const mapa = linksJaEncurtados(original, resposta);
+  const titulo = dadosDaOferta(c.texto).titulo;
+  let falhas = 0;
+  const r = await trocarLinks(c.texto, c.entities, async url => {
+    if (mapa.has(url)) return mapa.get(url);
+    try {
+      return await encurtar(url, titulo);
+    } catch (e) {
+      console.error(e);
+      falhas++;
+      return url;
+    }
+  });
+  return { ...r, falhas };
+}
+
+// Monta a resposta; parse_mode só no Telegram, para o WhatsApp vai texto puro
+async function montar(original, destino, grupo, resposta) {
+  const c = await conteudoEncurtado(original, resposta);
   const saida = converter({ texto: c.texto, entities: c.entities, destino, grupo });
-  return { c, saida, parse_mode: destino === 'tg' ? 'HTML' : undefined };
+  return { c, saida, parse_mode: destino === 'tg' ? 'HTML' : undefined, falhas: c.falhas };
+}
+
+async function avisarFalhaEncurtador(falhas, chatId) {
+  if (falhas) await tg('sendMessage', { chat_id: chatId, text: 'Não consegui encurtar um dos links no jogobara.to, então ele ficou original.' });
 }
 
 // Capa do jogo: a foto da própria oferta ou, se não tiver, a imagem da página do link
@@ -106,8 +144,8 @@ async function avisarFotoPequena(msg, chatId) {
 
 // Manda a arte respondendo à oferta original. Se o texto não couber na legenda,
 // a arte vai sozinha e o texto (com os botões) numa mensagem logo depois.
-async function responderComArte(original, png, destino, grupo) {
-  const { saida, parse_mode } = montar(original, destino, grupo);
+async function responderComArte(original, png, destino, grupo, resposta) {
+  const { saida, parse_mode, falhas } = await montar(original, destino, grupo, resposta);
   const chat_id = original.chat.id;
   const reply_parameters = { message_id: original.message_id, allow_sending_without_reply: true };
   if (saida.length <= LIMITE_LEGENDA) {
@@ -116,6 +154,7 @@ async function responderComArte(original, png, destino, grupo) {
     await enviarFoto({ chat_id, reply_parameters }, png);
     await tg('sendMessage', { chat_id, text: saida.slice(0, LIMITE_TEXTO), parse_mode, reply_markup: teclado(destino, grupo, false), reply_parameters, link_preview_options: previa(original, destino) });
   }
+  await avisarFalhaEncurtador(falhas, chat_id);
 }
 
 async function novaOferta(msg) {
@@ -138,7 +177,7 @@ async function novaOferta(msg) {
     }
   }
 
-  const { saida, parse_mode } = montar(msg, destino, grupo);
+  const { saida, parse_mode, falhas } = await montar(msg, destino, grupo);
   const base = {
     chat_id: msg.chat.id,
     parse_mode,
@@ -152,6 +191,7 @@ async function novaOferta(msg) {
     await tg('sendMessage', { ...base, text: saida.slice(0, LIMITE_TEXTO), link_preview_options: previa(msg, destino) });
     await tg('sendMessage', { chat_id: msg.chat.id, text: 'Não achei a capa do jogo. Pra sair a arte, responda à mensagem acima com a foto da capa.' });
   }
+  await avisarFalhaEncurtador(falhas, msg.chat.id);
 }
 
 // Botão "Gerar arte" (respostas sem capa): gera mesmo sem capa
@@ -164,7 +204,7 @@ async function arte(cb, original, destino, grupo) {
     await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não consegui gerar a arte dessa oferta.' });
     return;
   }
-  await responderComArte(original, png, destino, grupo);
+  await responderComArte(original, png, destino, grupo, cb.message);
 }
 
 // Você respondeu a uma mensagem do bot com uma foto: refaz a arte com essa foto como capa
@@ -212,7 +252,7 @@ async function botao(cb) {
     return;
   }
   if (ehArte) return arte(cb, original, destino, grupo);
-  const { saida, parse_mode } = montar(original, destino, grupo);
+  const { saida, parse_mode } = await montar(original, destino, grupo, resposta);
   // Mantém o botão "Gerar arte" só onde ele já estava
   const comArte = ((resposta.reply_markup && resposta.reply_markup.inline_keyboard) || [])
     .some(l => l.some(b => (b.callback_data || '').startsWith('arte|')));

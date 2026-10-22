@@ -77,3 +77,21 @@ test('rodapé que já veio na oferta é trocado, não duplicado', async () => {
   // Texto sem link no "rodapé" fica como está
   assert.equal(semRodape('Grupo de promoções de amigos', []).texto, 'Grupo de promoções de amigos');
 });
+
+test('encurtador troca links de loja e ajusta as entities', async () => {
+  const { trocarLinks, deveEncurtar } = await import('../lib/encurtador.js');
+  assert.equal(deveEncurtar('https://jogobara.to/abc'), false);
+  assert.equal(deveEncurtar('amzn.to/xyz'), true);
+  const t = '🎮 Jogo\n👉 https://www.amazon.com.br/dp/B0F9ZT5MH9?tag=x\n• R$ 10 Comprar\nhttps://jogobara.to/ok';
+  const e = [
+    { type: 'bold', offset: 0, length: 7 },
+    ent(t, 'https://www.amazon.com.br/dp/B0F9ZT5MH9?tag=x', 'url'),
+    ent(t, 'Comprar', 'text_link', { url: 'https://amzn.to/abc' }),
+    ent(t, 'https://jogobara.to/ok', 'url')
+  ];
+  const curtos = { 'https://www.amazon.com.br/dp/B0F9ZT5MH9?tag=x': 'https://jogobara.to/AAA', 'https://amzn.to/abc': 'https://jogobara.to/BBB' };
+  const r = await trocarLinks(t, e, async u => curtos[u]);
+  assert.equal(r.texto, '🎮 Jogo\n👉 https://jogobara.to/AAA\n• R$ 10 Comprar\nhttps://jogobara.to/ok');
+  assert.equal(entitiesPara('wa', r.texto, r.entities),
+    '*🎮 Jogo*\n👉 https://jogobara.to/AAA\n• R$ 10 Comprar (https://jogobara.to/BBB)\nhttps://jogobara.to/ok');
+});
