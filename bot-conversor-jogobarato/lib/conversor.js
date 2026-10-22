@@ -16,7 +16,7 @@ export const GRUPOS = {
     nome: 'JB Indica',
     titulo: 'Grupo de Promoções do JB Indica:',
     link: process.env.LINK_INDICA || 'https://jogobara.to/S3cM9',
-    linkTelegram: process.env.LINK_TG_INDICA || process.env.LINK_INDICA || 'https://jogobara.to/S3cM9'
+    linkTelegram: process.env.LINK_TG_INDICA || 'https://www.jogobarato.com.br/redes-sociais'
   }
 };
 

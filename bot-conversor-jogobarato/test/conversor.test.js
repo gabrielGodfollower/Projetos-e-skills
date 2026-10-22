@@ -35,7 +35,7 @@ test('rodapé do Jogo Barato e do JB Indica', () => {
   assert.equal(converter({ texto: 'Oi', entities: [], destino: 'wa', grupo: 'jb' }),
     'Oi\n\n*Grupo de Promoções do Jogo Barato:*\n👉 https://jogobara.to/M05ex');
   assert.equal(converter({ texto: 'Oi', entities: [], destino: 'tg', grupo: 'ind' }),
-    'Oi\n\n<b>Canais de Promoções do <a href="https://jogobara.to/S3cM9">JB Indica</a></b>');
+    'Oi\n\n<b>Canais de Promoções do <a href="https://www.jogobarato.com.br/redes-sociais">JB Indica</a></b>');
   assert.equal(converter({ texto: 'Oi  \n', entities: [], destino: 'wa', grupo: 'sem' }), 'Oi');
 });
 
