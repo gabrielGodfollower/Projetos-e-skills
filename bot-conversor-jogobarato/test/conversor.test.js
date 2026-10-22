@@ -35,7 +35,7 @@ test('rodapé do Jogo Barato e do JB Indica', () => {
   assert.equal(converter({ texto: 'Oi', entities: [], destino: 'wa', grupo: 'jb' }),
     'Oi\n\n*Grupo de Promoções do Jogo Barato:*\n👉 https://jogobara.to/M05ex');
   assert.equal(converter({ texto: 'Oi', entities: [], destino: 'tg', grupo: 'ind' }),
-    'Oi\n\n<b>Grupo de Promoções do JB Indica:</b>\n👉 https://jogobara.to/S3cM9');
+    'Oi\n\n<b>Canais de Promoções do <a href="https://jogobara.to/S3cM9">JB Indica</a></b>');
   assert.equal(converter({ texto: 'Oi  \n', entities: [], destino: 'wa', grupo: 'sem' }), 'Oi');
 });
 
@@ -103,4 +103,18 @@ test('ASIN da Amazon e link sozinho não vira título', async () => {
   assert.equal(asinDaAmazon('https://www.amazon.com.br/gp/product/B0F2NZ8LKV'), 'B0F2NZ8LKV');
   assert.equal(asinDaAmazon('https://jogobara.to/abc'), null);
   assert.equal(dadosDaOferta('https://www.amazon.com.br/dp/B0HKB8KB6P?x=1').titulo, '');
+});
+
+test('oferta do canal do Telegram ida e volta com o rodapé dos canais', () => {
+  const t = '🔥 [Amazon] DRAGON QUEST III\n\n👉 https://jogobara.to/DtrM0\n• R$ 183,66 em até 6x\n\n✈️ Envio Internacional. Taxas Inclusas.\n\nCanais de Promoções do Jogo Barato';
+  const e = [
+    { type: 'url', offset: t.indexOf('https'), length: 'https://jogobara.to/DtrM0'.length },
+    ent(t, 'Envio Internacional. Taxas Inclusas.', 'italic'),
+    ent(t, 'Canais de Promoções do Jogo Barato', 'bold'),
+    ent(t, 'Jogo Barato', 'text_link', { url: 'https://jogobara.to/grupos' })
+  ];
+  return import('../lib/conversor.js').then(({ semRodape }) => {
+    assert.equal(converter({ ...semRodape(t, e), destino: 'tg', grupo: 'jb' }),
+      '🔥 [Amazon] DRAGON QUEST III\n\n👉 https://jogobara.to/DtrM0\n• R$ 183,66 em até 6x\n\n✈️ <i>Envio Internacional. Taxas Inclusas.</i>\n\n<b>Canais de Promoções do <a href="https://jogobara.to/M05ex">Jogo Barato</a></b>');
+  });
 });

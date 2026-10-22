@@ -3,16 +3,20 @@
 // - mensagens do Telegram chegam com "entities" (negrito, itálico, links...)
 // - texto colado do WhatsApp chega cru, com *negrito*, _itálico_ e ~riscado~
 
+// No WhatsApp o rodapé é "Grupo de Promoções do...: 👉 link"; no Telegram segue o
+// padrão dos canais: "Canais de Promoções do <nome com link>", tudo em negrito
 export const GRUPOS = {
   jb: {
     nome: 'Jogo Barato',
     titulo: 'Grupo de Promoções do Jogo Barato:',
-    link: process.env.LINK_JB || 'https://jogobara.to/M05ex'
+    link: process.env.LINK_JB || 'https://jogobara.to/M05ex',
+    linkTelegram: process.env.LINK_TG_JB || process.env.LINK_JB || 'https://jogobara.to/M05ex'
   },
   ind: {
     nome: 'JB Indica',
     titulo: 'Grupo de Promoções do JB Indica:',
-    link: process.env.LINK_INDICA || 'https://jogobara.to/S3cM9'
+    link: process.env.LINK_INDICA || 'https://jogobara.to/S3cM9',
+    linkTelegram: process.env.LINK_TG_INDICA || process.env.LINK_INDICA || 'https://jogobara.to/S3cM9'
   }
 };
 
@@ -201,7 +205,7 @@ export function rodape(id, destino) {
   if (!g) return '';
   return destino === 'wa'
     ? '*' + g.titulo + '*\n👉 ' + g.link
-    : '<b>' + escHtml(g.titulo) + '</b>\n👉 ' + g.link;
+    : '<b>Canais de Promoções do <a href="' + escHtml(g.linkTelegram) + '">' + escHtml(g.nome) + '</a></b>';
 }
 
 // destino: 'wa' (texto pronto para colar no WhatsApp) ou 'tg' (HTML para o Telegram)
