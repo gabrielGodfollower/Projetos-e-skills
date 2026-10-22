@@ -25,7 +25,8 @@ export async function encurtar(url, titulo = '') {
   const api = process.env.YOURLS_API || 'https://jogobara.to/yourls-api.php';
   // Assinatura com horário, assim o token em si nunca vai na URL
   const timestamp = Math.floor(Date.now() / 1000);
-  const signature = createHash('md5').update(timestamp + process.env.YOURLS_SIGNATURE).digest('hex');
+  const token = process.env.YOURLS_SIGNATURE.trim();
+  const signature = createHash('md5').update(timestamp + token).digest('hex');
   const params = new URLSearchParams({
     action: 'shorturl', format: 'json', timestamp: String(timestamp), signature,
     url: /^https?:\/\//i.test(url) ? url : 'https://' + url,
@@ -38,10 +39,13 @@ export async function encurtar(url, titulo = '') {
     body: params,
     signal: AbortSignal.timeout(8000)
   });
-  const j = await r.json().catch(() => ({}));
+  const corpo = await r.text();
+  let j = {};
+  try { j = JSON.parse(corpo); } catch { /* não veio JSON: provavelmente um bloqueio antes do YOURLS */ }
   // Se o link já tinha sido encurtado, o YOURLS responde "already exists" junto com o link curto
   if (j.shorturl) return j.shorturl;
-  throw new Error('YOURLS: ' + (j.message || r.status));
+  const motivo = j.message || `HTTP ${r.status}${/cloudflare|challenge|captcha/i.test(corpo) ? ' (bloqueio de proteção do site)' : ''}`;
+  throw new Error('YOURLS respondeu: ' + motivo);
 }
 
 // Lista os links da mensagem na ordem em que aparecem

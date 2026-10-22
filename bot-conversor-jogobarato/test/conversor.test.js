@@ -95,3 +95,12 @@ test('encurtador troca links de loja e ajusta as entities', async () => {
   assert.equal(entitiesPara('wa', r.texto, r.entities),
     '*🎮 Jogo*\n👉 https://jogobara.to/AAA\n• R$ 10 Comprar (https://jogobara.to/BBB)\nhttps://jogobara.to/ok');
 });
+
+test('ASIN da Amazon e link sozinho não vira título', async () => {
+  const { asinDaAmazon, dadosDaOferta } = await import('../lib/arte.js');
+  assert.equal(asinDaAmazon('https://www.amazon.com.br/dp/B0HKB8KB6P?smid=A1ZZ&tag=jogobaratojgbrl-20'), 'B0HKB8KB6P');
+  assert.equal(asinDaAmazon('https://www.amazon.com.br/Dragons-Dogma/dp/B0HKB8KB6P/ref=x'), 'B0HKB8KB6P');
+  assert.equal(asinDaAmazon('https://www.amazon.com.br/gp/product/B0F2NZ8LKV'), 'B0F2NZ8LKV');
+  assert.equal(asinDaAmazon('https://jogobara.to/abc'), null);
+  assert.equal(dadosDaOferta('https://www.amazon.com.br/dp/B0HKB8KB6P?x=1').titulo, '');
+});

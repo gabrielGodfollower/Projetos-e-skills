@@ -78,17 +78,17 @@ function linksJaEncurtados(original, resposta) {
 // Texto da oferta com os links de loja trocados por jogobara.to
 async function conteudoEncurtado(original, resposta) {
   const c = conteudo(original);
-  if (!encurtadorLigado()) return { ...c, falhas: 0 };
+  if (!encurtadorLigado()) return { ...c, falhas: [] };
   const mapa = linksJaEncurtados(original, resposta);
   const titulo = dadosDaOferta(c.texto).titulo;
-  let falhas = 0;
+  const falhas = [];
   const r = await trocarLinks(c.texto, c.entities, async url => {
     if (mapa.has(url)) return mapa.get(url);
     try {
       return await encurtar(url, titulo);
     } catch (e) {
       console.error(e);
-      falhas++;
+      falhas.push(e.message);
       return url;
     }
   });
@@ -103,7 +103,7 @@ async function montar(original, destino, grupo, resposta) {
 }
 
 async function avisarFalhaEncurtador(falhas, chatId) {
-  if (falhas) await tg('sendMessage', { chat_id: chatId, text: 'Não consegui encurtar um dos links no jogobara.to, então ele ficou original.' });
+  if (falhas.length) await tg('sendMessage', { chat_id: chatId, text: `Não consegui encurtar um dos links no jogobara.to, então ele ficou original.\nMotivo: ${falhas[0]}` });
 }
 
 // Capa do jogo: a foto da própria oferta ou, se não tiver, a imagem da página do link

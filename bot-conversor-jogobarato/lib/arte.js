@@ -22,6 +22,7 @@ export function dadosDaOferta(texto) {
   if (m) { loja = m[1]; titulo = titulo.slice(m[0].length); }
   // Tira emojis e marcadores do começo do título
   titulo = titulo.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+  if (/^(?:https?:\/\/|www\.)\S+$/i.test(titulo)) titulo = '';
   // Padrão do Jogo Barato: "à vista" ou "parcelado", conforme a linha do preço
   const linhaPreco = linhas.find(l => /R\$\s?\d/.test(l)) || '';
   const p = linhaPreco.match(/R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)/);
@@ -36,8 +37,34 @@ export function tipoImagem(buf) {
   return null;
 }
 
+// Amazon bloqueia leitura da página por servidores; a imagem do produto ainda
+// sai pelo widget de imagem dos Associados, que só precisa do código ASIN
+export function asinDaAmazon(url) {
+  const m = url.match(/amazon\.[a-z.]+\/(?:[^\s?]*\/)?(?:dp|gp\/product|gp\/aw\/d)\/([A-Z0-9]{10})/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
+async function baixarImagem(url) {
+  try {
+    const r = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(4000) });
+    const buf = Buffer.from(await r.arrayBuffer());
+    // A Amazon devolve um GIF de 1 pixel quando não acha a imagem
+    return tipoImagem(buf) && buf.length > 2000 ? buf : null;
+  } catch {
+    return null;
+  }
+}
+
+async function capaDaAmazon(asin) {
+  const capa = await baixarImagem(`https://ws-na.amazon-adsystem.com/widgets/q?_encoding=UTF8&MarketPlace=BR&ASIN=${asin}&ServiceVersion=20070822&ID=AsinImage&WS=1&Format=_SL1000_`);
+  return capa || baixarImagem(`https://images-na.ssl-images-amazon.com/images/P/${asin}.01._SCLZZZZZZZ_.jpg`);
+}
+
 // Procura a imagem da página do link (og:image), como a prévia do Telegram faz
 export async function capaDoLink(url) {
+  // Página da Amazon não adianta abrir: ela bloqueia servidores
+  const asin = asinDaAmazon(url);
+  if (asin) return capaDaAmazon(asin);
   try {
     const r = await fetch(url, {
       redirect: 'follow',
