@@ -42,7 +42,7 @@ export function enviarFoto(dados, png) {
 }
 
 // Troca a imagem de uma mensagem do bot, mantendo legenda e botões
-export function trocarFoto({ chat_id, message_id, caption, caption_entities, reply_markup }, png) {
-  const media = { type: 'photo', media: 'attach://arte', caption, caption_entities };
+export function trocarFoto({ chat_id, message_id, caption, caption_entities, parse_mode, reply_markup }, png) {
+  const media = { type: 'photo', media: 'attach://arte', caption, caption_entities, parse_mode };
   return tgArquivo('editMessageMedia', { chat_id, message_id, media, reply_markup }, 'arte', png);
 }

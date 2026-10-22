@@ -9,7 +9,7 @@
 // 5. Links de lojas viram links jogobara.to (YOURLS), se YOURLS_SIGNATURE estiver configurado.
 import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js';
 import { tg, baixarArquivo, enviarFoto, trocarFoto } from '../lib/telegram.js';
-import { gerarArte, dadosDaOferta, capaDoLink } from '../lib/arte.js';
+import { gerarArte, dadosDaOferta, capaDoLink, modeloDoGrupo } from '../lib/arte.js';
 import { encurtadorLigado, encurtar, deveEncurtar, linksEmOrdem, trocarLinks } from '../lib/encurtador.js';
 
 const LIMITE_LEGENDA = 1024;
@@ -48,6 +48,13 @@ function teclado(destino, grupo, comArte) {
   ];
   if (comArte) linhas.push([{ text: '🖼 Gerar arte', callback_data: `arte|${destino}|${grupo}` }]);
   return { inline_keyboard: linhas };
+}
+
+// Qual rodapé está marcado (✅) nos botões de uma resposta do bot
+function grupoMarcado(markup) {
+  const linha = (markup && markup.inline_keyboard && markup.inline_keyboard[0]) || [];
+  const b = linha.find(x => (x.text || '').startsWith('✅') && x.callback_data);
+  return b ? b.callback_data.split('|').pop() : 'jb';
 }
 
 // Texto da mensagem, já sem o rodapé que ela possa ter trazido
@@ -125,9 +132,10 @@ async function capaDaOferta(msg, texto, entities) {
   return null;
 }
 
-async function tentarArte(texto, capa) {
+// O modelo da arte acompanha o rodapé: JB Indica tem arte própria
+async function tentarArte(texto, capa, grupo) {
   try {
-    return await gerarArte({ ...dadosDaOferta(texto), capa });
+    return await gerarArte({ ...dadosDaOferta(texto), capa, modelo: modeloDoGrupo(grupo) });
   } catch (e) {
     console.error(e);
     return null;
@@ -169,7 +177,7 @@ async function novaOferta(msg) {
   // Já responde com a arte quando tem capa (foto da oferta ou imagem do link)
   if (!msg.video && !msg.animation && !msg.document) {
     const capa = await capaDaOferta(msg, c.texto, c.entities);
-    const png = capa && await tentarArte(c.texto, capa);
+    const png = capa && await tentarArte(c.texto, capa, grupo);
     if (png) {
       await responderComArte(msg, png, destino, grupo);
       await avisarFotoPequena(msg, msg.chat.id);
@@ -199,7 +207,7 @@ async function arte(cb, original, destino, grupo) {
   await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Gerando a arte...' });
   const c = conteudo(original);
   const capa = await capaDaOferta(original, c.texto, c.entities);
-  const png = await tentarArte(c.texto, capa);
+  const png = await tentarArte(c.texto, capa, grupo);
   if (!png) {
     await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não consegui gerar a arte dessa oferta.' });
     return;
@@ -218,7 +226,7 @@ async function trocarCapa(msg) {
   const entities = (typeof base.caption === 'string' ? base.caption_entities : base.entities) || [];
   const capa = await baixarArquivo(msg.photo[msg.photo.length - 1].file_id);
   // A legenda do bot pode ter *negrito* de WhatsApp; tira as marcas pra ler nome e preço
-  const png = await tentarArte(semRodape(legenda).texto.replace(/[*_~]/g, ''), capa);
+  const png = await tentarArte(semRodape(legenda).texto.replace(/[*_~]/g, ''), capa, grupoMarcado(base.reply_markup));
   if (!png) {
     await tg('sendMessage', { chat_id: msg.chat.id, text: 'Não consegui gerar a arte com essa foto.' });
     return;
@@ -257,6 +265,17 @@ async function botao(cb) {
   const comArte = ((resposta.reply_markup && resposta.reply_markup.inline_keyboard) || [])
     .some(l => l.some(b => (b.callback_data || '').startsWith('arte|')));
   const comum = { chat_id: resposta.chat.id, message_id: resposta.message_id, parse_mode, reply_markup: teclado(destino, grupo, comArte) };
+  // Arte trocando entre Jogo Barato e JB Indica: refaz a imagem no outro modelo
+  if (resposta.photo && modeloDoGrupo(grupoMarcado(resposta.reply_markup)) !== modeloDoGrupo(grupo) && saida.length <= LIMITE_LEGENDA) {
+    await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Trocando a arte...' });
+    const c = conteudo(original);
+    const capa = await capaDaOferta(original, c.texto, c.entities);
+    const png = await tentarArte(c.texto, capa, grupo);
+    if (png) {
+      await trocarFoto({ chat_id: comum.chat_id, message_id: comum.message_id, caption: saida, parse_mode, reply_markup: comum.reply_markup }, png);
+      return;
+    }
+  }
   try {
     if (typeof resposta.caption === 'string' || MIDIA.some(k => resposta[k])) {
       if (saida.length > LIMITE_LEGENDA) {
