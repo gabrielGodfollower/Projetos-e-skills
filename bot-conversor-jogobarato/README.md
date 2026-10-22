@@ -4,14 +4,13 @@ Bot do Telegram que faz o mesmo que o conversor em HTML: pega uma oferta, conver
 
 ## Como usar
 
-1. Encaminhe uma oferta do Telegram para o bot (com ou sem foto) ou cole o texto.
-2. O bot responde com a versão para o WhatsApp e o rodapé do **Jogo Barato**. Segure a mensagem e toque em **Copiar**.
-3. Os botões trocam o rodapé (**Jogo Barato**, **JB Indica** ou **Sem rodapé**) e o destino (**Para WhatsApp** ou **Para Telegram**).
-4. Em **Para Telegram** a oferta volta já formatada (negrito, riscado, spoiler, links), pronta para encaminhar no grupo.
+1. Mande a foto da capa com o texto da oferta na legenda (ou encaminhe uma oferta do Telegram).
+2. O bot já responde com a **arte** no padrão do Jogo Barato e o texto para o WhatsApp na legenda, com o rodapé do **Jogo Barato**. Segure a mensagem e toque em **Copiar**.
+3. Os botões trocam o rodapé (**Jogo Barato**, **JB Indica** ou **Sem rodapé**) e o destino (**Para WhatsApp** ou **Para Telegram**). Se a oferta já vier com um rodapé ("Grupo de Promoções do...", "Canais de Promoções do..."), ele é trocado, não duplicado.
+4. Pra trocar a capa, responda à arte com outra foto. Se a foto for pequena, o bot avisa.
+5. Sem foto, o bot tenta pegar a capa pela página do link. Se não conseguir, responde só com o texto e pede a foto.
 
-**Gerar arte:** monta a imagem da oferta no fundo do Jogo Barato (`assets/fundo-arte.png`), com a capa do jogo, o nome, a loja e o preço. A capa vem da foto da oferta ou, se não tiver foto, da imagem da página do link. O preço é o primeiro `R$` do texto.
-
-Se você colar um texto do WhatsApp (com `*negrito*`, `_itálico_`, `~riscado~`), o bot já abre na versão para o Telegram.
+A arte usa o fundo `assets/fundo-arte.png`, título em Saira, preço em Teko Medium. O primeiro preço da oferta define o texto embaixo: "no pix"/"à vista" vira **à vista**, "em até 6x" vira **parcelado**.
 
 Comandos: `/ajuda` e `/id` (mostra seu ID do Telegram).
 

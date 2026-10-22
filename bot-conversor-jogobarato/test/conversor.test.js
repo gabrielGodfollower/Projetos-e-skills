@@ -65,3 +65,15 @@ test('arte: preço principal define à vista ou parcelado', async () => {
   const parc = dadosDaOferta('DQ III\n• R$ 183,66 em até 6x');
   assert.deepEqual([parc.preco, parc.condicao], ['183,66', 'parcelado']);
 });
+
+test('rodapé que já veio na oferta é trocado, não duplicado', async () => {
+  const { semRodape } = await import('../lib/conversor.js');
+  const t = '*Oferta*\n• R$ 10\n\n*Grupo de Promoções do JB Indica:*\n👉 https://jogobara.to/S3cM9';
+  assert.equal(converter({ ...semRodape(t, []), destino: 'wa', grupo: 'jb' }),
+    '*Oferta*\n• R$ 10\n\n*Grupo de Promoções do Jogo Barato:*\n👉 https://jogobara.to/M05ex');
+  const t2 = 'Mario Kart\n• R$ 233,92 no pix\n\nCanais de Promoções do Jogo Barato';
+  const e2 = [{ type: 'bold', offset: 0, length: 10 }, { type: 'text_link', offset: t2.indexOf('Jogo Barato'), length: 11, url: 'https://jogobara.to/grupos' }];
+  assert.deepEqual(semRodape(t2, e2), { texto: 'Mario Kart\n• R$ 233,92 no pix', entities: [e2[0]] });
+  // Texto sem link no "rodapé" fica como está
+  assert.equal(semRodape('Grupo de promoções de amigos', []).texto, 'Grupo de promoções de amigos');
+});

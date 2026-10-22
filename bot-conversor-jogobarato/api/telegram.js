@@ -1,56 +1,57 @@
 // Webhook do bot. Fluxo:
-// 1. Você encaminha (ou cola) uma oferta para o bot.
-// 2. O bot responde à sua mensagem com a versão convertida e botões para
-//    trocar o rodapé (Jogo Barato, JB Indica, sem rodapé) e o destino
-//    (WhatsApp ou Telegram).
+// 1. Você encaminha (ou cola) uma oferta para o bot, de preferência com a foto da capa.
+// 2. O bot já responde com a arte da oferta (fundo do Jogo Barato) e o texto
+//    convertido na legenda, com botões para trocar o rodapé (Jogo Barato,
+//    JB Indica, sem rodapé) e o destino (WhatsApp ou Telegram).
 // 3. Ao tocar num botão, o bot relê a mensagem original (a que ele respondeu)
 //    e edita a resposta. Assim nada precisa ser guardado em banco de dados.
-// 4. "Gerar arte" monta a imagem da oferta no fundo do Jogo Barato.
-import { converter, sentidoPadrao, GRUPOS } from '../lib/conversor.js';
-import { tg, baixarArquivo, enviarFoto } from '../lib/telegram.js';
+// 4. Respondendo à arte com outra foto, o bot troca a capa.
+import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js';
+import { tg, baixarArquivo, enviarFoto, trocarFoto } from '../lib/telegram.js';
 import { gerarArte, dadosDaOferta, capaDoLink } from '../lib/arte.js';
 
 const LIMITE_LEGENDA = 1024;
 const LIMITE_TEXTO = 4096;
 const MIDIA = ['photo', 'video', 'animation', 'document'];
 
-const AJUDA = `Oi! Eu converto ofertas entre Telegram e WhatsApp e coloco o rodapé do grupo.
+const AJUDA = `Oi! Eu converto ofertas entre Telegram e WhatsApp, coloco o rodapé do grupo e faço a arte.
 
 Como usar:
-• Encaminhe uma oferta do Telegram para mim (pode ser com foto) ou cole o texto aqui.
-• Eu respondo com o texto pronto para o WhatsApp. É só segurar a mensagem e tocar em Copiar.
+• Mande a foto da capa com o texto da oferta na legenda (ou encaminhe uma oferta do Telegram).
+• Eu respondo com a arte pronta e o texto para o WhatsApp na legenda. Segure a mensagem e toque em Copiar.
 • Os botões trocam o rodapé (${GRUPOS.jb.nome}, ${GRUPOS.ind.nome} ou sem rodapé) e o destino.
-• Em "Para Telegram" eu mando a oferta já formatada, pronta para encaminhar no grupo.
-• "Gerar arte" cria a imagem da oferta com a capa do jogo e o preço. Pra trocar a capa, responda à arte com outra foto.
+• Em "Para Telegram" a legenda vira a oferta formatada, pronta para encaminhar no grupo.
+• Pra trocar a capa, responda à arte com outra foto.
 
-Se você colar um texto do WhatsApp (com *negrito*), eu já mostro a versão para o Telegram.`;
+No WhatsApp, os *asteriscos* viram negrito e os _sublinhados_ viram itálico quando você cola o texto.`;
 
 function permitido(userId) {
   const lista = (process.env.ALLOWED_USERS || '').split(',').map(s => s.trim()).filter(Boolean);
   return !lista.length || lista.includes(String(userId));
 }
 
-function teclado(destino, grupo) {
+// O botão "Gerar arte" só aparece quando a resposta ainda não é a arte
+function teclado(destino, grupo, comArte) {
   const marca = (ativo, txt) => (ativo ? '✅ ' : '') + txt;
-  return {
-    inline_keyboard: [
-      [
-        { text: marca(grupo === 'jb', GRUPOS.jb.nome), callback_data: `${destino}|jb` },
-        { text: marca(grupo === 'ind', GRUPOS.ind.nome), callback_data: `${destino}|ind` },
-        { text: marca(grupo === 'sem', 'Sem rodapé'), callback_data: `${destino}|sem` }
-      ],
-      [
-        { text: marca(destino === 'wa', 'Para WhatsApp'), callback_data: `wa|${grupo}` },
-        { text: marca(destino === 'tg', 'Para Telegram'), callback_data: `tg|${grupo}` }
-      ],
-      [{ text: '🖼 Gerar arte', callback_data: `arte|${destino}|${grupo}` }]
+  const linhas = [
+    [
+      { text: marca(grupo === 'jb', GRUPOS.jb.nome), callback_data: `${destino}|jb` },
+      { text: marca(grupo === 'ind', GRUPOS.ind.nome), callback_data: `${destino}|ind` },
+      { text: marca(grupo === 'sem', 'Sem rodapé'), callback_data: `${destino}|sem` }
+    ],
+    [
+      { text: marca(destino === 'wa', 'Para WhatsApp'), callback_data: `wa|${grupo}` },
+      { text: marca(destino === 'tg', 'Para Telegram'), callback_data: `tg|${grupo}` }
     ]
-  };
+  ];
+  if (comArte) linhas.push([{ text: '🖼 Gerar arte', callback_data: `arte|${destino}|${grupo}` }]);
+  return { inline_keyboard: linhas };
 }
 
+// Texto da mensagem, já sem o rodapé que ela possa ter trazido
 function conteudo(msg) {
-  if (typeof msg.text === 'string') return { texto: msg.text, entities: msg.entities || [], midia: false };
-  if (typeof msg.caption === 'string') return { texto: msg.caption, entities: msg.caption_entities || [], midia: true };
+  if (typeof msg.text === 'string') return semRodape(msg.text, msg.entities || []);
+  if (typeof msg.caption === 'string') return semRodape(msg.caption, msg.caption_entities || []);
   return null;
 }
 
@@ -65,30 +66,6 @@ function montar(original, destino, grupo) {
   const c = conteudo(original);
   const saida = converter({ texto: c.texto, entities: c.entities, destino, grupo });
   return { c, saida, parse_mode: destino === 'tg' ? 'HTML' : undefined };
-}
-
-async function novaOferta(msg) {
-  const c = conteudo(msg);
-  if (!c || !c.texto.trim()) {
-    await tg('sendMessage', { chat_id: msg.chat.id, text: 'Mande uma oferta com texto (ou foto com legenda) que eu converto.' });
-    return;
-  }
-  const destino = sentidoPadrao(c.texto, c.entities);
-  const grupo = 'jb';
-  const { saida, parse_mode } = montar(msg, destino, grupo);
-  const base = {
-    chat_id: msg.chat.id,
-    parse_mode,
-    reply_markup: teclado(destino, grupo),
-    reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true }
-  };
-  const temMidia = MIDIA.some(k => msg[k]);
-  if (temMidia && saida.length <= LIMITE_LEGENDA) {
-    // Copia a foto/vídeo com a legenda convertida
-    await tg('copyMessage', { ...base, from_chat_id: msg.chat.id, message_id: msg.message_id, caption: saida });
-  } else {
-    await tg('sendMessage', { ...base, text: saida.slice(0, LIMITE_TEXTO), link_preview_options: previa(msg, destino) });
-  }
 }
 
 // Capa do jogo: a foto da própria oferta ou, se não tiver, a imagem da página do link
@@ -110,31 +87,12 @@ async function capaDaOferta(msg, texto, entities) {
   return null;
 }
 
-async function arte(cb, original, destino, grupo) {
-  await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Gerando a arte...' });
-  const c = conteudo(original);
-  const capa = await capaDaOferta(original, c.texto, c.entities);
-  let png;
+async function tentarArte(texto, capa) {
   try {
-    png = await gerarArte({ ...dadosDaOferta(c.texto), capa });
+    return await gerarArte({ ...dadosDaOferta(texto), capa });
   } catch (e) {
     console.error(e);
-    await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não consegui gerar a arte dessa oferta.' });
-    return;
-  }
-  const { saida, parse_mode } = montar(original, destino, grupo);
-  const legenda = saida.length <= LIMITE_LEGENDA;
-  await enviarFoto({
-    chat_id: cb.message.chat.id,
-    caption: legenda ? saida : undefined,
-    parse_mode: legenda ? parse_mode : undefined,
-    reply_markup: teclado(destino, grupo),
-    reply_parameters: { message_id: original.message_id, allow_sending_without_reply: true }
-  }, png);
-  if (!capa) {
-    await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não achei a capa do jogo pelo link. Responda a esta arte com a foto da capa que eu refaço.' });
-  } else {
-    await avisarFotoPequena(original, cb.message.chat.id);
+    return null;
   }
 }
 
@@ -146,24 +104,100 @@ async function avisarFotoPequena(msg, chatId) {
   }
 }
 
-// Você respondeu a uma mensagem do bot com uma foto: refaz a arte usando essa foto como capa
+// Manda a arte respondendo à oferta original. Se o texto não couber na legenda,
+// a arte vai sozinha e o texto (com os botões) numa mensagem logo depois.
+async function responderComArte(original, png, destino, grupo) {
+  const { saida, parse_mode } = montar(original, destino, grupo);
+  const chat_id = original.chat.id;
+  const reply_parameters = { message_id: original.message_id, allow_sending_without_reply: true };
+  if (saida.length <= LIMITE_LEGENDA) {
+    await enviarFoto({ chat_id, caption: saida, parse_mode, reply_markup: teclado(destino, grupo, false), reply_parameters }, png);
+  } else {
+    await enviarFoto({ chat_id, reply_parameters }, png);
+    await tg('sendMessage', { chat_id, text: saida.slice(0, LIMITE_TEXTO), parse_mode, reply_markup: teclado(destino, grupo, false), reply_parameters, link_preview_options: previa(original, destino) });
+  }
+}
+
+async function novaOferta(msg) {
+  const c = conteudo(msg);
+  if (!c || !c.texto.trim()) {
+    await tg('sendMessage', { chat_id: msg.chat.id, text: 'Mande uma oferta com texto (ou a foto da capa com a oferta na legenda) que eu converto.' });
+    return;
+  }
+  const destino = sentidoPadrao(c.texto, c.entities);
+  const grupo = 'jb';
+
+  // Já responde com a arte quando tem capa (foto da oferta ou imagem do link)
+  if (!msg.video && !msg.animation && !msg.document) {
+    const capa = await capaDaOferta(msg, c.texto, c.entities);
+    const png = capa && await tentarArte(c.texto, capa);
+    if (png) {
+      await responderComArte(msg, png, destino, grupo);
+      await avisarFotoPequena(msg, msg.chat.id);
+      return;
+    }
+  }
+
+  const { saida, parse_mode } = montar(msg, destino, grupo);
+  const base = {
+    chat_id: msg.chat.id,
+    parse_mode,
+    reply_markup: teclado(destino, grupo, true),
+    reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true }
+  };
+  if (MIDIA.some(k => msg[k]) && saida.length <= LIMITE_LEGENDA) {
+    // Vídeo/GIF/arquivo: copia com a legenda convertida
+    await tg('copyMessage', { ...base, from_chat_id: msg.chat.id, message_id: msg.message_id, caption: saida });
+  } else {
+    await tg('sendMessage', { ...base, text: saida.slice(0, LIMITE_TEXTO), link_preview_options: previa(msg, destino) });
+    await tg('sendMessage', { chat_id: msg.chat.id, text: 'Não achei a capa do jogo. Pra sair a arte, responda à mensagem acima com a foto da capa.' });
+  }
+}
+
+// Botão "Gerar arte" (respostas sem capa): gera mesmo sem capa
+async function arte(cb, original, destino, grupo) {
+  await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Gerando a arte...' });
+  const c = conteudo(original);
+  const capa = await capaDaOferta(original, c.texto, c.entities);
+  const png = await tentarArte(c.texto, capa);
+  if (!png) {
+    await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não consegui gerar a arte dessa oferta.' });
+    return;
+  }
+  await responderComArte(original, png, destino, grupo);
+}
+
+// Você respondeu a uma mensagem do bot com uma foto: refaz a arte com essa foto como capa
 async function trocarCapa(msg) {
   const base = msg.reply_to_message;
-  const c = conteudo(base);
-  if (!c || !c.texto.trim()) {
+  const legenda = typeof base.caption === 'string' ? base.caption : base.text;
+  if (!legenda || !legenda.trim()) {
     await tg('sendMessage', { chat_id: msg.chat.id, text: 'Responda a uma oferta ou arte minha com a foto, que eu uso ela como capa.' });
     return;
   }
+  const entities = (typeof base.caption === 'string' ? base.caption_entities : base.entities) || [];
   const capa = await baixarArquivo(msg.photo[msg.photo.length - 1].file_id);
-  // O texto do bot pode ter *negrito* de WhatsApp; tira as marcas pra ler nome e preço
-  const png = await gerarArte({ ...dadosDaOferta(c.texto.replace(/[*_~]/g, '')), capa });
-  const legenda = c.texto.length <= LIMITE_LEGENDA;
-  await enviarFoto({
-    chat_id: msg.chat.id,
-    caption: legenda ? c.texto : undefined,
-    caption_entities: legenda && c.entities.length ? c.entities : undefined,
-    reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true }
-  }, png);
+  // A legenda do bot pode ter *negrito* de WhatsApp; tira as marcas pra ler nome e preço
+  const png = await tentarArte(semRodape(legenda).texto.replace(/[*_~]/g, ''), capa);
+  if (!png) {
+    await tg('sendMessage', { chat_id: msg.chat.id, text: 'Não consegui gerar a arte com essa foto.' });
+    return;
+  }
+  if (base.photo) {
+    // Troca a imagem da própria arte: a legenda e os botões continuam funcionando
+    await trocarFoto({
+      chat_id: msg.chat.id, message_id: base.message_id, caption: legenda,
+      caption_entities: entities.length ? entities : undefined, reply_markup: base.reply_markup
+    }, png);
+  } else {
+    const cabe = legenda.length <= LIMITE_LEGENDA;
+    await enviarFoto({
+      chat_id: msg.chat.id,
+      caption: cabe ? legenda : undefined,
+      caption_entities: cabe && entities.length ? entities : undefined,
+      reply_parameters: { message_id: base.message_id, allow_sending_without_reply: true }
+    }, png);
+  }
   await avisarFotoPequena(msg, msg.chat.id);
 }
 
@@ -179,7 +213,10 @@ async function botao(cb) {
   }
   if (ehArte) return arte(cb, original, destino, grupo);
   const { saida, parse_mode } = montar(original, destino, grupo);
-  const comum = { chat_id: resposta.chat.id, message_id: resposta.message_id, parse_mode, reply_markup: teclado(destino, grupo) };
+  // Mantém o botão "Gerar arte" só onde ele já estava
+  const comArte = ((resposta.reply_markup && resposta.reply_markup.inline_keyboard) || [])
+    .some(l => l.some(b => (b.callback_data || '').startsWith('arte|')));
+  const comum = { chat_id: resposta.chat.id, message_id: resposta.message_id, parse_mode, reply_markup: teclado(destino, grupo, comArte) };
   try {
     if (typeof resposta.caption === 'string' || MIDIA.some(k => resposta[k])) {
       if (saida.length > LIMITE_LEGENDA) {

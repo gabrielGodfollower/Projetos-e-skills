@@ -24,15 +24,25 @@ export async function baixarArquivo(fileId) {
   return Buffer.from(await r.arrayBuffer());
 }
 
-// Envia uma imagem gerada pelo bot (multipart, já que não é um file_id)
-export async function enviarFoto(dados, png) {
+// Chamada com arquivo anexado (multipart), para imagens geradas pelo bot
+async function tgArquivo(metodo, dados, campo, png) {
   const form = new FormData();
   for (const [k, v] of Object.entries(dados)) {
     if (v !== undefined) form.append(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
   }
-  form.append('photo', new Blob([png], { type: 'image/png' }), 'arte.png');
-  const r = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/sendPhoto`, { method: 'POST', body: form });
+  form.append(campo, new Blob([png], { type: 'image/png' }), 'arte.png');
+  const r = await fetch(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/${metodo}`, { method: 'POST', body: form });
   const j = await r.json().catch(() => ({ ok: false, description: 'resposta inválida' }));
-  if (!j.ok) throw new Error(`sendPhoto: ${j.description}`);
+  if (!j.ok) throw new Error(`${metodo}: ${j.description}`);
   return j.result;
+}
+
+export function enviarFoto(dados, png) {
+  return tgArquivo('sendPhoto', dados, 'photo', png);
+}
+
+// Troca a imagem de uma mensagem do bot, mantendo legenda e botões
+export function trocarFoto({ chat_id, message_id, caption, caption_entities, reply_markup }, png) {
+  const media = { type: 'photo', media: 'attach://arte', caption, caption_entities };
+  return tgArquivo('editMessageMedia', { chat_id, message_id, media, reply_markup }, 'arte', png);
 }

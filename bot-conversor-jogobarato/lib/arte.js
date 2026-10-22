@@ -42,13 +42,13 @@ export async function capaDoLink(url) {
     const r = await fetch(url, {
       redirect: 'follow',
       headers: { 'user-agent': 'Mozilla/5.0 (compatible; TelegramBot (like TwitterBot))', 'accept-language': 'pt-BR' },
-      signal: AbortSignal.timeout(6000)
+      signal: AbortSignal.timeout(4000)
     });
     const html = await r.text();
     const m = html.match(/<meta[^>]+(?:property|name)=["']og:image(?::secure_url)?["'][^>]*>/i);
     const c = m && m[0].match(/content=["']([^"']+)["']/i);
     if (!c) return null;
-    const img = await fetch(new URL(c[1].replace(/&amp;/g, '&'), r.url), { signal: AbortSignal.timeout(6000) });
+    const img = await fetch(new URL(c[1].replace(/&amp;/g, '&'), r.url), { signal: AbortSignal.timeout(4000) });
     const buf = Buffer.from(await img.arrayBuffer());
     return tipoImagem(buf) ? buf : null;
   } catch {

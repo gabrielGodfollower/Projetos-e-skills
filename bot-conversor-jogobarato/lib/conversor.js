@@ -160,6 +160,28 @@ export function textoParaHtml(src) {
   return p.restore(t);
 }
 
+// ---------- rodapé que já veio na oferta ----------
+// Ofertas encaminhadas de novo (ou copiadas do próprio bot) já trazem um rodapé
+// ("Grupo de Promoções do...", "Canais de Promoções do..."). Corta a partir dele
+// para não sair dois rodapés.
+const RODAPE_EXISTENTE = /^[\s*_~>]*(?:grupos?|canal|canais) de promo[çc][õo]es\b/im;
+export function semRodape(texto, entities = []) {
+  const m = RODAPE_EXISTENTE.exec(texto);
+  if (!m) return { texto, entities };
+  const resto = texto.slice(m.index);
+  const temLink = /jogobara\.to|jogobarato|t\.me\/|whatsapp\.com/i.test(resto)
+    || entities.some(e => e.type === 'text_link' && e.offset >= m.index);
+  if (!temLink) return { texto, entities };
+  let corte = m.index;
+  while (corte > 0 && /\s/.test(texto[corte - 1])) corte--;
+  return {
+    texto: texto.slice(0, corte),
+    entities: entities
+      .filter(e => e.offset < corte)
+      .map(e => (e.offset + e.length > corte ? { ...e, length: corte - e.offset } : e))
+  };
+}
+
 // ---------- detecção e montagem ----------
 export function temFormatacao(entities = []) {
   return entities.some(e => FORMATOS.has(e.type));
