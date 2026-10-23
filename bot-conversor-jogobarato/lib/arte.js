@@ -105,31 +105,39 @@ function tamanhoTitulo(t) {
   return 19;
 }
 
+const LARGURA_JB = 1197;
+export const PRECO_JB = {
+  apartir: { top: 878, size: 26, espaco: -1, direita: 1131 },
+  preco: { top: 903, size: 60, direita: 1133 },
+  condicao: { top: 959, size: 26, espaco: -1, direita: 1132 }
+};
+
 const JOGO_BARATO = {
-  largura: 1197, altura: 999, fundo: png64('fundo-arte.png'),
+  largura: LARGURA_JB, altura: 999, fundo: png64('fundo-arte.png'),
   camadas({ titulo, preco, condicao, capa, tipo }) {
     const c = [h('div', {
       position: 'absolute', left: 33, top: 212, width: 1040,
       color: AZUL_TEXTO, fontFamily: 'Saira', fontSize: tamanhoTitulo(titulo), lineHeight: 1.25
     }, titulo)];
-    if (tipo) c.push(capaImg(capa, tipo, { left: 250, top: 316, width: 700, height: 436 }));
+    if (tipo) c.push(capaImg(capa, tipo, { left: 249, top: 343, width: 700, height: 527 }));
     // Caixa do preço: redesenhada por cima da do fundo, que já tem "R$" escrito
     if (preco) {
-      const tamPreco = preco.length <= 6 ? 64 : preco.length <= 8 ? 58 : 50;
       c.push(h('div', {
         position: 'absolute', left: 806, top: 866, width: 356, height: 150,
         background: 'linear-gradient(90deg, #00296c, #003486)', borderRadius: 22,
         transform: 'skewX(-9deg)'
       }, []));
-      c.push(h('div', {
-        position: 'absolute', left: 806, top: 868, width: 327, height: 118,
-        flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center',
-        color: '#fff', fontFamily: 'Teko'
-      }, [
-        h('div', { fontSize: 29, lineHeight: 0.85 }, 'a partir de'),
-        h('div', { fontSize: tamPreco, lineHeight: 0.85, marginTop: 4 }, 'R$ ' + preco),
-        h('div', { fontSize: 29, lineHeight: 0.85 }, condicao)
-      ]));
+      // Medidas copiadas da arte do Photoshop (texto alinhado à direita)
+      const p = PRECO_JB;
+      const linha = (txt, { top, size, espaco = 0, direita }) => h('div', {
+        position: 'absolute', right: LARGURA_JB - direita, top, color: '#fff',
+        fontFamily: 'Teko', fontSize: size, lineHeight: 1, letterSpacing: espaco, whiteSpace: 'nowrap'
+      }, txt);
+      // Preço muito comprido diminui pra caber na caixa
+      const tamPreco = Math.round(p.preco.size * Math.min(1, 13 / (preco.length + 3)));
+      c.push(linha('a partir de', p.apartir));
+      c.push(linha('R$ ' + preco, { ...p.preco, top: p.preco.top + (p.preco.size - tamPreco) / 2, size: tamPreco }));
+      c.push(linha(condicao, p.condicao));
     }
     return c;
   }
