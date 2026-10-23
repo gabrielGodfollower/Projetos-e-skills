@@ -10,7 +10,7 @@ Bot do Telegram que faz o mesmo que o conversor em HTML: pega uma oferta, conver
 4. Pra trocar a capa, responda à arte com outra foto. Se a foto for pequena, o bot avisa.
 5. Sem foto, o bot tenta pegar a capa pela página do link. Se não conseguir, responde só com o texto e pede a foto.
 
-A arte usa o fundo `assets/fundo-arte.png`, título em Saira, preço em Teko Medium. O primeiro preço da oferta define o texto embaixo: "no pix"/"à vista" vira **à vista**, "em até 6x" vira **parcelado**.
+A arte usa o fundo original `assets/fundo-arte.png` (1200x1000, o mesmo do conversor em HTML do Jogo Barato), título em Saira, preço em Teko Medium. O preço é o primeiro valor da oferta que é mesmo preço: pula cupom, cashback, frete, o valor da parcela ("10x de R$ 29,99") e o preço antigo ("De R$ 299 por R$ 149"), e sai sempre com centavos. O trecho desse valor define o texto embaixo: "no pix"/"à vista" vira **à vista**, "em até 6x" vira **parcelado**.
 
 **Encurtador:** com `YOURLS_SIGNATURE` configurado, os links de loja (Amazon, Mercado Livre...) viram links `jogobara.to` no YOURLS do Jogo Barato. Links que já são jogobara.to, Telegram ou WhatsApp ficam como estão. Pegue o token em YOURLS > **Tools** > *Secure passwordless API call* (o "signature token").
 

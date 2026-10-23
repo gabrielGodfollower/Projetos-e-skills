@@ -29,11 +29,44 @@ export function dadosDaOferta(texto) {
   }
   titulo = titulo.replace(/^[^\p{L}\p{N}]+/u, '').replace(/\s{2,}/g, ' ').trim();
   if (/^(?:https?:\/\/|www\.)\S+$/i.test(titulo)) titulo = '';
-  // Padrão do Jogo Barato: "à vista" ou "parcelado", conforme a linha do preço
-  const linhaPreco = linhas.find(l => /R\$\s?\d/.test(l)) || '';
-  const p = linhaPreco.match(/R\$\s?(\d{1,3}(?:\.\d{3})*(?:,\d{2})?)/);
-  const parcelado = /\d+\s*x\b|parcelad|em até/i.test(linhaPreco) && !/à vista|a vista|pix|boleto/i.test(linhaPreco);
-  return { titulo, loja, preco: p ? p[1] : '', condicao: parcelado ? 'parcelado' : 'à vista' };
+  const { preco, condicao } = precoPrincipal(texto);
+  return { titulo, loja, preco, condicao };
+}
+
+// Preço da arte: o primeiro valor em R$ que é mesmo o preço do produto. Pula
+// cupom, cashback e frete (filtros do conversor em HTML do Jogo Barato), o valor
+// da parcela ("10x de R$ 29,99") e o preço antigo ("De R$ 299 por R$ 149").
+// "à vista" ou "parcelado" sai do trecho em volta desse valor.
+const VALOR = /R\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?/g;
+export function precoPrincipal(texto) {
+  const valores = [...texto.matchAll(VALOR)].map(m => {
+    const iniLinha = texto.lastIndexOf('\n', m.index - 1) + 1;
+    return {
+      m, iniLinha,
+      fimLinha: (texto.indexOf('\n', m.index) + 1 || texto.length + 1) - 1,
+      antes: texto.slice(Math.max(iniLinha, m.index - 28), m.index).toLowerCase(),
+      depois: texto.slice(m.index + m[0].length, m.index + m[0].length + 16).toLowerCase()
+    };
+  });
+  const temPor = i => valores.slice(i + 1).some(v => /\bpor:?\s*[~*_]*$/.test(v.antes));
+  const naoEPreco = (v, i) =>
+    /(cupom de|cashback|frete|acima de|compras|desconto de|economi|cr[eé]dito)/.test(v.antes)
+    || /^\s*(off|de desconto|de volta|cashback)/.test(v.depois)
+    || /\d+\s*x\s*(de\s*)?$/.test(v.antes)
+    || /~+\s*$/.test(v.antes)
+    || (/(?:^|[^\p{L}])de:?\s*[*_]*$/u.test(v.antes) && !/partir de:?\s*[*_]*$/.test(v.antes) && temPor(i));
+  const i = Math.max(0, valores.findIndex((v, j) => !naoEPreco(v, j)));
+  const v = valores[i];
+  if (!v) return { preco: '', condicao: 'à vista' };
+  // Trecho do valor: da linha dele, entre o valor anterior e o próximo
+  const ant = valores[i - 1], prox = valores[i + 1];
+  const ini = ant && ant.fimLinha === v.fimLinha ? ant.m.index + ant.m[0].length : v.iniLinha;
+  const fim = prox && prox.iniLinha === v.iniLinha ? prox.m.index : v.fimLinha;
+  const trecho = texto.slice(ini, fim);
+  const parcelado = /\d+\s*x\b|parcelad|em até/i.test(trecho) && !/à vista|a vista|pix|boleto/i.test(trecho);
+  // Sempre com centavos e ponto no milhar: "R$ 1299" vira "1.299,00"
+  const reais = v.m[1].replace(/\./g, '').replace(/\B(?=(\d{3})+$)/g, '.');
+  return { preco: reais + ',' + (v.m[2] || '').padEnd(2, '0'), condicao: parcelado ? 'parcelado' : 'à vista' };
 }
 
 // ---------- capa do jogo ----------
@@ -142,7 +175,9 @@ function tamanhoTitulo(t) {
   return 19;
 }
 
-const LARGURA_JB = 1197;
+// Fundo original do modelo (o mesmo do conversor em HTML do Jogo Barato), com a
+// caixa do preço limpa. Título, capa e preço estão nas medidas da arte do Photoshop.
+const LARGURA_JB = 1200;
 export const PRECO_JB = {
   apartir: { top: 878, size: 26, espaco: -1, direita: 1131 },
   preco: { top: 903, size: 60, direita: 1133 },
@@ -150,7 +185,7 @@ export const PRECO_JB = {
 };
 
 const JOGO_BARATO = {
-  largura: LARGURA_JB, altura: 999, fundo: png64('fundo-arte.png'),
+  largura: LARGURA_JB, altura: 1000, fundo: png64('fundo-arte.png'),
   camadas({ titulo, preco, condicao, capa, tipo }) {
     const c = [h('div', {
       position: 'absolute', left: 33, top: 212, width: 1040,
@@ -159,13 +194,7 @@ const JOGO_BARATO = {
     // Capa em pé ocupa a altura toda; produto deitado (console, bundle) usa a largura
     // toda e fica um pouco abaixo do meio, como no Photoshop
     if (tipo) c.push(capaImg(capa, tipo, { left: 130, top: 343, width: 940, height: 527, vertical: 0.66 }));
-    // Caixa do preço: redesenhada por cima da do fundo, que já tem "R$" escrito
     if (preco) {
-      c.push(h('div', {
-        position: 'absolute', left: 806, top: 866, width: 356, height: 150,
-        background: 'linear-gradient(90deg, #00296c, #003486)', borderRadius: 22,
-        transform: 'skewX(-9deg)'
-      }, []));
       // Medidas copiadas da arte do Photoshop (texto alinhado à direita)
       const p = PRECO_JB;
       const linha = (txt, { top, size, espaco = 0, direita }) => h('div', {

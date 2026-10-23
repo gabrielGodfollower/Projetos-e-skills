@@ -142,3 +142,28 @@ test('lê o tamanho de PNG e JPEG', async () => {
   const { readFileSync } = await import('node:fs');
   assert.deepEqual(tamanhoImagem(readFileSync(new URL('../assets/fundo-jbindica.png', import.meta.url))), { w: 1200, h: 1000 });
 });
+
+test('preço da arte pula preço antigo, cupom, frete e parcela', async () => {
+  const { precoPrincipal } = await import('../lib/arte.js');
+  const casos = [
+    ['• R$ 233,92 no pix\n• R$ 269,91 em até 6x', '233,92', 'à vista'],
+    ['De R$ 299 por R$ 149', '149,00', 'à vista'],
+    ['De: ~R$ 299,90~\nPor: R$ 149,90 no pix', '149,90', 'à vista'],
+    ['Cupom de R$ 20 OFF: JOGO20\nR$ 179,90', '179,90', 'à vista'],
+    ['Cupom: JOGO20 (R$ 20 OFF)\nR$ 179,90 em até 3x', '179,90', 'parcelado'],
+    ['R$ 299,90 ou 10x de R$ 29,99', '299,90', 'parcelado'],
+    ['R$ 249,00\nFrete grátis acima de R$ 79', '249,00', 'à vista'],
+    ['R$ 99,90 em 3x ou R$ 89,90 no pix', '99,90', 'parcelado'],
+    ['A partir de R$ 1299', '1.299,00', 'à vista'],
+    ['sem preço', '', 'à vista']
+  ];
+  for (const [texto, preco, condicao] of casos) {
+    assert.deepEqual(precoPrincipal('Jogo\n' + texto), { preco, condicao }, texto);
+  }
+});
+
+test('fundo do Jogo Barato é o original de 1200x1000', async () => {
+  const { tamanhoImagem } = await import('../lib/arte.js');
+  const { readFileSync } = await import('node:fs');
+  assert.deepEqual(tamanhoImagem(readFileSync(new URL('../assets/fundo-arte.png', import.meta.url))), { w: 1200, h: 1000 });
+});
