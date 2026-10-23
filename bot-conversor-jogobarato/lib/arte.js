@@ -3,16 +3,40 @@
 import { readFileSync } from 'node:fs';
 import satori from 'satori';
 import { Resvg } from '@resvg/resvg-js';
+import opentype from '@shuding/opentype.js';
 
 const ler = nome => readFileSync(new URL('../assets/' + nome, import.meta.url));
 const png64 = nome => 'data:image/png;base64,' + ler(nome).toString('base64');
+// Teko e Baloo 2 são as mesmas fontes embutidas no conversor em HTML do Jogo Barato
 const FONTES = [
+  { name: 'Teko', data: ler('teko-400.ttf'), weight: 400, style: 'normal' },
   { name: 'Teko', data: ler('teko-500.ttf'), weight: 500, style: 'normal' },
-  { name: 'Saira', data: ler('saira-700.ttf'), weight: 700, style: 'normal' },
+  { name: 'Baloo', data: ler('baloo2-500.ttf'), weight: 500, style: 'normal' },
   { name: 'Outfit', data: ler('outfit-500.ttf'), weight: 500, style: 'normal' },
   { name: 'Outfit', data: ler('outfit-700.ttf'), weight: 700, style: 'normal' }
 ];
-const AZUL_TEXTO = '#0a1b37';
+
+// Medidas de texto como as do canvas do HTML: largura com kerning e altura real
+// das letras (do alto do "$" até o pé do "p", por exemplo)
+const fontesLidas = {};
+function medir(arquivo, txt, tam) {
+  const b = ler(arquivo);
+  const f = fontesLidas[arquivo] ||= opentype.parse(b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength));
+  const glifos = f.stringToGlyphs(txt).filter(g => g.yMax !== undefined);
+  const escala = tam / f.unitsPerEm;
+  return {
+    largura: f.getAdvanceWidth(txt, tam),
+    sobe: Math.max(0, ...glifos.map(g => g.yMax)) * escala,
+    desce: -Math.min(0, ...glifos.map(g => g.yMin)) * escala,
+    // Onde a linha de base cai numa linha de altura igual ao tamanho da fonte
+    base: tam * ((1 - (f.ascender - f.descender) / f.unitsPerEm) / 2 + f.ascender / f.unitsPerEm)
+  };
+}
+// Diminui a fonte até o texto caber na largura, como o HTML faz
+function tamanhoQueCabe(arquivo, txt, tam, larguraMax) {
+  const { largura } = medir(arquivo, txt, tam);
+  return largura > larguraMax ? Math.floor(tam * larguraMax / largura) : tam;
+}
 
 // ---------- leitura do texto da oferta ----------
 export function dadosDaOferta(texto) {
@@ -33,40 +57,29 @@ export function dadosDaOferta(texto) {
   return { titulo, loja, preco, condicao };
 }
 
-// Preço da arte: o primeiro valor em R$ que é mesmo o preço do produto. Pula
-// cupom, cashback e frete (filtros do conversor em HTML do Jogo Barato), o valor
-// da parcela ("10x de R$ 29,99") e o preço antigo ("De R$ 299 por R$ 149").
-// "à vista" ou "parcelado" sai do trecho em volta desse valor.
-const VALOR = /R\$\s?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?/g;
+// Preço da arte, com a regra do conversor em HTML do Jogo Barato: o menor valor
+// em R$ do texto, sem cupom, cashback e frete. A mais, aqui, fica de fora o valor
+// da parcela ("10x de R$ 29,99"), que no HTML virava o preço. Se o texto fala em
+// Pix ou à vista em qualquer lugar, é "à vista"; senão, "parcelado".
+const VALOR = /R\$\s*(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?/g;
+const A_VISTA = /(?:^|[^\wÀ-ú])(?:[àa]\s?vista|pix)(?![\wÀ-ú])/i;
 export function precoPrincipal(texto) {
-  const valores = [...texto.matchAll(VALOR)].map(m => {
+  const valores = [];
+  for (const m of texto.matchAll(VALOR)) {
     const iniLinha = texto.lastIndexOf('\n', m.index - 1) + 1;
-    return {
-      m, iniLinha,
-      fimLinha: (texto.indexOf('\n', m.index) + 1 || texto.length + 1) - 1,
-      antes: texto.slice(Math.max(iniLinha, m.index - 28), m.index).toLowerCase(),
-      depois: texto.slice(m.index + m[0].length, m.index + m[0].length + 16).toLowerCase()
-    };
-  });
-  const temPor = i => valores.slice(i + 1).some(v => /\bpor:?\s*[~*_]*$/.test(v.antes));
-  const naoEPreco = (v, i) =>
-    /(cupom de|cashback|frete|acima de|compras|desconto de|economi|cr[eé]dito)/.test(v.antes)
-    || /^\s*(off|de desconto|de volta|cashback)/.test(v.depois)
-    || /\d+\s*x\s*(de\s*)?$/.test(v.antes)
-    || /~+\s*$/.test(v.antes)
-    || (/(?:^|[^\p{L}])de:?\s*[*_]*$/u.test(v.antes) && !/partir de:?\s*[*_]*$/.test(v.antes) && temPor(i));
-  const i = Math.max(0, valores.findIndex((v, j) => !naoEPreco(v, j)));
-  const v = valores[i];
-  if (!v) return { preco: '', condicao: 'à vista' };
-  // Trecho do valor: da linha dele, entre o valor anterior e o próximo
-  const ant = valores[i - 1], prox = valores[i + 1];
-  const ini = ant && ant.fimLinha === v.fimLinha ? ant.m.index + ant.m[0].length : v.iniLinha;
-  const fim = prox && prox.iniLinha === v.iniLinha ? prox.m.index : v.fimLinha;
-  const trecho = texto.slice(ini, fim);
-  const parcelado = /\d+\s*x\b|parcelad|em até/i.test(trecho) && !/à vista|a vista|pix|boleto/i.test(trecho);
+    const antes = texto.slice(Math.max(iniLinha, m.index - 28), m.index).toLowerCase();
+    const depois = texto.slice(m.index + m[0].length, m.index + m[0].length + 16).toLowerCase();
+    if (/(cupom de|cashback|frete|acima de|compras|desconto de|economi|cr[eé]dito)/.test(antes)
+      || /^\s*(off|de desconto|de volta|cashback)/.test(depois)
+      || /\d+\s*x\s*(de\s*)?$/.test(antes)) continue;
+    const v = parseFloat(m[1].replace(/\./g, '') + '.' + (m[2] || '0').padEnd(2, '0'));
+    if (v > 0) valores.push(v);
+  }
+  const condicao = A_VISTA.test(texto) ? 'à vista' : 'parcelado';
+  if (!valores.length) return { preco: '', condicao };
   // Sempre com centavos e ponto no milhar: "R$ 1299" vira "1.299,00"
-  const reais = v.m[1].replace(/\./g, '').replace(/\B(?=(\d{3})+$)/g, '.');
-  return { preco: reais + ',' + (v.m[2] || '').padEnd(2, '0'), condicao: parcelado ? 'parcelado' : 'à vista' };
+  const [reais, centavos] = Math.min(...valores).toFixed(2).split('.');
+  return { preco: reais.replace(/\B(?=(\d{3})+$)/g, '.') + ',' + centavos, condicao };
 }
 
 // ---------- capa do jogo ----------
@@ -168,44 +181,66 @@ function capaImg(capa, tipo, { left, top, width, height, vertical = 0.5 }) {
 }
 
 // ---------- modelo Jogo Barato ----------
-// Título numa linha no alto, capa no meio, preço na caixa azul do canto
-function tamanhoTitulo(t) {
-  if (t.length <= 50) return 24;
-  if (t.length <= 62) return 21;
-  return 19;
+// Mesmo desenho do conversor em HTML do Jogo Barato (layout "jb" dele), com o
+// fundo original de 1200x1000. Posições em pixels da arte final.
+const LARGURA_JB = 1200;
+export const LAYOUT_JB = {
+  // A imagem do produto encaixa inteira em 90% desta área, no centro
+  produto: { left: 280, top: 281, width: 640, height: 580, escala: 0.9 },
+  // Nome do produto: Baloo 2 Medium, linha de base em 248; diminui se passar de 1134 px
+  titulo: { fonte: 'baloo2-500.ttf', tam: 25, x: 32, base: 248, cor: '#082147', larguraMax: 1134 },
+  // Preço no quadro azul: linhas empilhadas com 3 px entre elas, o bloco centralizado
+  // na altura 931 e alinhado à direita em 1120; cada linha cabe em 268 px
+  preco: {
+    direita: 1120, centro: 931, espaco: 3, larguraMax: 268,
+    cima: { fonte: 'teko-400.ttf', peso: 400, tam: 26 },
+    valor: { fonte: 'teko-500.ttf', peso: 500, tam: 60 },
+    baixo: { fonte: 'teko-400.ttf', peso: 400, tam: 26 }
+  }
+};
+
+// Linhas do quadro do preço: "a partir de", o valor e "parcelado" (no Pix ou à
+// vista essa última linha não aparece, como no HTML)
+export function linhasDoPrecoJB(preco, condicao) {
+  const P = LAYOUT_JB.preco;
+  const linhas = [
+    { txt: 'a partir de', ...P.cima },
+    { txt: 'R$ ' + preco, ...P.valor },
+    condicao === 'parcelado' && { txt: 'parcelado', ...P.baixo }
+  ].filter(Boolean).map(l => {
+    const tam = tamanhoQueCabe(l.fonte, l.txt, l.tam, P.larguraMax);
+    return { ...l, tam, ...medir(l.fonte, l.txt, tam) };
+  });
+  const total = linhas.reduce((t, l) => t + l.sobe + l.desce, 0) + P.espaco * (linhas.length - 1);
+  let topo = P.centro - total / 2;
+  for (const l of linhas) {
+    l.linhaDeBase = topo + l.sobe;
+    topo += l.sobe + l.desce + P.espaco;
+  }
+  return linhas;
 }
 
-// Fundo original do modelo (o mesmo do conversor em HTML do Jogo Barato), com a
-// caixa do preço limpa. Título, capa e preço estão nas medidas da arte do Photoshop.
-const LARGURA_JB = 1200;
-export const PRECO_JB = {
-  apartir: { top: 878, size: 26, espaco: -1, direita: 1131 },
-  preco: { top: 903, size: 60, direita: 1133 },
-  condicao: { top: 959, size: 26, espaco: -1, direita: 1132 }
-};
+// Texto com a linha de base numa altura exata (o satori posiciona pelo topo da linha)
+const naBase = (txt, { linhaDeBase, base, tam, ...estilo }) => h('div', {
+  position: 'absolute', top: linhaDeBase - base, fontSize: tam, lineHeight: 1, whiteSpace: 'nowrap', ...estilo
+}, txt);
 
 const JOGO_BARATO = {
   largura: LARGURA_JB, altura: 1000, fundo: png64('fundo-arte.png'),
   camadas({ titulo, preco, condicao, capa, tipo }) {
-    const c = [h('div', {
-      position: 'absolute', left: 33, top: 212, width: 1040,
-      color: AZUL_TEXTO, fontFamily: 'Saira', fontSize: tamanhoTitulo(titulo), lineHeight: 1.25
-    }, titulo)];
-    // Capa em pé ocupa a altura toda; produto deitado (console, bundle) usa a largura
-    // toda e fica um pouco abaixo do meio, como no Photoshop
-    if (tipo) c.push(capaImg(capa, tipo, { left: 130, top: 343, width: 940, height: 527, vertical: 0.66 }));
+    const c = [];
+    if (tipo) {
+      const A = LAYOUT_JB.produto, e = A.escala, w = A.width * e, hh = A.height * e;
+      c.push(capaImg(capa, tipo, { left: A.left + (A.width - w) / 2, top: A.top + (A.height - hh) / 2, width: w, height: hh }));
+    }
+    if (titulo) {
+      const T = LAYOUT_JB.titulo, tam = tamanhoQueCabe(T.fonte, titulo, T.tam, T.larguraMax);
+      c.push(naBase(titulo, { left: T.x, color: T.cor, fontFamily: 'Baloo', fontWeight: 500, tam, linhaDeBase: T.base, base: medir(T.fonte, titulo, tam).base }));
+    }
     if (preco) {
-      // Medidas copiadas da arte do Photoshop (texto alinhado à direita)
-      const p = PRECO_JB;
-      const linha = (txt, { top, size, espaco = 0, direita }) => h('div', {
-        position: 'absolute', right: LARGURA_JB - direita, top, color: '#fff',
-        fontFamily: 'Teko', fontSize: size, lineHeight: 1, letterSpacing: espaco, whiteSpace: 'nowrap'
-      }, txt);
-      // Preço muito comprido diminui pra caber na caixa
-      const tamPreco = Math.round(p.preco.size * Math.min(1, 13 / (preco.length + 3)));
-      c.push(linha('a partir de', p.apartir));
-      c.push(linha('R$ ' + preco, { ...p.preco, top: p.preco.top + (p.preco.size - tamPreco) / 2, size: tamPreco }));
-      c.push(linha(condicao, p.condicao));
+      for (const l of linhasDoPrecoJB(preco, condicao)) {
+        c.push(naBase(l.txt, { right: LARGURA_JB - LAYOUT_JB.preco.direita, color: '#fff', fontFamily: 'Teko', fontWeight: l.peso, tam: l.tam, linhaDeBase: l.linhaDeBase, base: l.base }));
+      }
     }
     return c;
   }

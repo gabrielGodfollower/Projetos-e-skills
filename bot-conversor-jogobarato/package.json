@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
+    "@shuding/opentype.js": "1.4.0-beta.0",
     "satori": "^0.18.3"
   }
 }

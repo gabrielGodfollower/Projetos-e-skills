@@ -143,23 +143,37 @@ test('lê o tamanho de PNG e JPEG', async () => {
   assert.deepEqual(tamanhoImagem(readFileSync(new URL('../assets/fundo-jbindica.png', import.meta.url))), { w: 1200, h: 1000 });
 });
 
-test('preço da arte pula preço antigo, cupom, frete e parcela', async () => {
+test('preço da arte segue o HTML: menor valor, sem cupom, frete nem parcela', async () => {
   const { precoPrincipal } = await import('../lib/arte.js');
   const casos = [
     ['• R$ 233,92 no pix\n• R$ 269,91 em até 6x', '233,92', 'à vista'],
-    ['De R$ 299 por R$ 149', '149,00', 'à vista'],
+    ['• R$ 269,91 em até 6x\n• R$ 233,92 no pix', '233,92', 'à vista'],
+    ['De R$ 299 por R$ 149', '149,00', 'parcelado'],
     ['De: ~R$ 299,90~\nPor: R$ 149,90 no pix', '149,90', 'à vista'],
-    ['Cupom de R$ 20 OFF: JOGO20\nR$ 179,90', '179,90', 'à vista'],
+    ['Cupom de R$ 20 OFF: JOGO20\nR$ 179,90', '179,90', 'parcelado'],
     ['Cupom: JOGO20 (R$ 20 OFF)\nR$ 179,90 em até 3x', '179,90', 'parcelado'],
     ['R$ 299,90 ou 10x de R$ 29,99', '299,90', 'parcelado'],
-    ['R$ 249,00\nFrete grátis acima de R$ 79', '249,00', 'à vista'],
-    ['R$ 99,90 em 3x ou R$ 89,90 no pix', '99,90', 'parcelado'],
-    ['A partir de R$ 1299', '1.299,00', 'à vista'],
-    ['sem preço', '', 'à vista']
+    ['R$ 249,00\nFrete grátis acima de R$ 79', '249,00', 'parcelado'],
+    ['R$ 99,90 em 3x ou R$ 89,90 no pix', '89,90', 'à vista'],
+    ['A partir de R$ 1299 à vista', '1.299,00', 'à vista'],
+    ['sem preço', '', 'parcelado']
   ];
   for (const [texto, preco, condicao] of casos) {
     assert.deepEqual(precoPrincipal('Jogo\n' + texto), { preco, condicao }, texto);
   }
+});
+
+test('quadro do preço do Jogo Barato: linhas centralizadas em 931, sem linha de baixo no Pix', async () => {
+  const { linhasDoPrecoJB } = await import('../lib/arte.js');
+  const centro = ls => (ls[0].linhaDeBase - ls[0].sobe + ls.at(-1).linhaDeBase + ls.at(-1).desce) / 2;
+  const pix = linhasDoPrecoJB('557,07', 'à vista');
+  assert.deepEqual(pix.map(l => l.txt), ['a partir de', 'R$ 557,07']);
+  assert.ok(Math.abs(centro(pix) - 931) < 0.01);
+  const parc = linhasDoPrecoJB('183,66', 'parcelado');
+  assert.deepEqual(parc.map(l => [l.txt, l.tam]), [['a partir de', 26], ['R$ 183,66', 60], ['parcelado', 26]]);
+  assert.ok(Math.abs(centro(parc) - 931) < 0.01);
+  // Preço que não cabe em 268 px diminui
+  assert.ok(linhasDoPrecoJB('123.456.789,00', 'à vista')[1].tam < 60);
 });
 
 test('fundo do Jogo Barato é o original de 1200x1000', async () => {
