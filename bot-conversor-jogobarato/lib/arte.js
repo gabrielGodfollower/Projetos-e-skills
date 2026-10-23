@@ -17,11 +17,11 @@ const AZUL_TEXTO = '#0a1b37';
 // ---------- leitura do texto da oferta ----------
 export function dadosDaOferta(texto) {
   const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
-  let titulo = linhas[0] || '';
+  // Tira as marcas de formatação (*negrito*, _itálico_...) e os emojis do começo
+  let titulo = (linhas[0] || '').replace(/[*_~`|]/g, '').replace(/^[^\p{L}\p{N}[]+/u, '');
   let loja = '';
   const m = titulo.match(/^\[([^\]]+)\]\s*/);
   if (m) { loja = m[1]; titulo = titulo.slice(m[0].length); }
-  // Tira emojis e marcadores do começo do título
   titulo = titulo.replace(/^[^\p{L}\p{N}]+/u, '').trim();
   if (/^(?:https?:\/\/|www\.)\S+$/i.test(titulo)) titulo = '';
   // Padrão do Jogo Barato: "à vista" ou "parcelado", conforme a linha do preço
@@ -112,7 +112,7 @@ const JOGO_BARATO = {
       position: 'absolute', left: 33, top: 212, width: 1040,
       color: AZUL_TEXTO, fontFamily: 'Saira', fontSize: tamanhoTitulo(titulo), lineHeight: 1.25
     }, titulo)];
-    if (tipo) c.push(capaImg(capa, tipo, { left: 249, top: 343, width: 700, height: 527 }));
+    if (tipo) c.push(capaImg(capa, tipo, { left: 250, top: 316, width: 700, height: 436 }));
     // Caixa do preço: redesenhada por cima da do fundo, que já tem "R$" escrito
     if (preco) {
       const tamPreco = preco.length <= 6 ? 64 : preco.length <= 8 ? 58 : 50;

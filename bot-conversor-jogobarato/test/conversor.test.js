@@ -118,3 +118,11 @@ test('oferta do canal do Telegram ida e volta com o rodapé dos canais', () => {
       '🔥 [Amazon] DRAGON QUEST III\n\n👉 https://jogobara.to/DtrM0\n• R$ 183,66 em até 6x\n\n✈️ <i>Envio Internacional. Taxas Inclusas.</i>\n\n<b>Canais de Promoções do <a href="https://www.jogobarato.com.br/redes-sociais">Jogo Barato</a></b>');
   });
 });
+
+test('título sem marcas de formatação nem colchete sobrando', async () => {
+  const { dadosDaOferta } = await import('../lib/arte.js');
+  for (const linha of ['*[Amazon] Pré-venda de Dragon’s Dogma 2: Dark Arisen (PS5)*', '🔥 *[Amazon] Pré-venda de Dragon’s Dogma 2: Dark Arisen (PS5)*', '🔥 [Amazon] Pré-venda de Dragon’s Dogma 2: Dark Arisen (PS5)']) {
+    const d = dadosDaOferta(linha + '\n• R$ 194,92 no pix');
+    assert.deepEqual([d.titulo, d.loja, d.preco, d.condicao], ['Pré-venda de Dragon’s Dogma 2: Dark Arisen (PS5)', 'Amazon', '194,92', 'à vista']);
+  }
+});
