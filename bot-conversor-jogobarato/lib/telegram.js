@@ -1,4 +1,6 @@
 // Chamadas à API de bots do Telegram. O token vem só das variáveis de ambiente.
+import { createHmac } from 'node:crypto';
+
 export async function tg(metodo, dados) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) throw new Error('Falta a variável TELEGRAM_BOT_TOKEN');
@@ -22,6 +24,18 @@ export async function baixarArquivo(fileId) {
   const r = await fetch(`https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${f.file_path}`);
   if (!r.ok) throw new Error('getFile: download falhou');
   return Buffer.from(await r.arrayBuffer());
+}
+
+// Link público de uma foto que o bot mandou (a arte), para o SendFlow baixar.
+// O link do próprio Telegram leva o token do bot, então a foto passa por /api/imagem,
+// que só entrega arquivos com a assinatura certa.
+export function assinarArquivo(fileId) {
+  const chave = process.env.TELEGRAM_WEBHOOK_SECRET || process.env.TELEGRAM_BOT_TOKEN || '';
+  return createHmac('sha256', chave).update(fileId).digest('hex').slice(0, 32);
+}
+
+export function linkPublicoDaFoto(host, fileId) {
+  return `https://${host}/arte/${assinarArquivo(fileId)}/${fileId}.jpg`;
 }
 
 // Chamada com arquivo anexado (multipart), para imagens geradas pelo bot

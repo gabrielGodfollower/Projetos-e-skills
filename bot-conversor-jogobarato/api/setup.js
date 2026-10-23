@@ -13,7 +13,8 @@ export default async function handler(req, res) {
     await tg('setMyCommands', {
       commands: [
         { command: 'ajuda', description: 'Como usar o conversor' },
-        { command: 'id', description: 'Mostra seu ID do Telegram' }
+        { command: 'id', description: 'Mostra seu ID do Telegram' },
+        { command: 'sendflow', description: 'Configuração do envio pro WhatsApp' }
       ]
     });
     const me = await tg('getMe', {});

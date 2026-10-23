@@ -7,10 +7,12 @@
 //    e edita a resposta. Assim nada precisa ser guardado em banco de dados.
 // 4. Respondendo à arte com outra foto, o bot troca a capa.
 // 5. Links de lojas viram links jogobara.to (YOURLS), se YOURLS_SIGNATURE estiver configurado.
+// 6. Com o SendFlow configurado, o botão "Enviar nos grupos" manda a oferta pro WhatsApp.
 import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js';
-import { tg, baixarArquivo, enviarFoto, trocarFoto } from '../lib/telegram.js';
+import { tg, baixarArquivo, enviarFoto, trocarFoto, linkPublicoDaFoto } from '../lib/telegram.js';
 import { gerarArte, dadosDaOferta, capaDoLink, modeloDoGrupo } from '../lib/arte.js';
 import { encurtadorLigado, encurtar, deveEncurtar, linksEmOrdem, trocarLinks } from '../lib/encurtador.js';
+import { sendflowLigado, lancamentoDoGrupo, lancamentos, prepararEnvio, enviarProsGrupos } from '../lib/sendflow.js';
 
 const LIMITE_LEGENDA = 1024;
 const LIMITE_TEXTO = 4096;
@@ -24,16 +26,26 @@ Como usar:
 • Os botões trocam o rodapé (${GRUPOS.jb.nome}, ${GRUPOS.ind.nome} ou sem rodapé) e o destino.
 • Em "Para Telegram" a legenda vira a oferta formatada, pronta para encaminhar no grupo.
 • Pra trocar a capa, responda à arte com outra foto.
+• Com o SendFlow ligado, o botão 📲 manda a arte e o texto pros grupos do WhatsApp do rodapé escolhido (pede confirmação antes). /sendflow mostra a configuração.
 
 No WhatsApp, os *asteriscos* viram negrito e os _sublinhados_ viram itálico quando você cola o texto.`;
 
+const equipe = () => (process.env.ALLOWED_USERS || '').split(',').map(s => s.trim()).filter(Boolean);
+
 function permitido(userId) {
-  const lista = (process.env.ALLOWED_USERS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const lista = equipe();
   return !lista.length || lista.includes(String(userId));
 }
 
-// O botão "Gerar arte" só aparece quando a resposta ainda não é a arte
-function teclado(destino, grupo, comArte) {
+// Mandar pros grupos do WhatsApp só com o bot fechado pra equipe, mesmo que o resto esteja aberto
+function podeDisparar(userId) {
+  return equipe().includes(String(userId));
+}
+
+// O botão "Gerar arte" só aparece quando a resposta ainda não é a arte.
+// "enviados" guarda pra quais grupos a oferta já foi no WhatsApp (ex.: "jb.ind"),
+// e "zap" troca a linha do envio (pela confirmação, por exemplo).
+function teclado(destino, grupo, { comArte = false, enviados = '', zap } = {}) {
   const marca = (ativo, txt) => (ativo ? '✅ ' : '') + txt;
   const linhas = [
     [
@@ -47,7 +59,22 @@ function teclado(destino, grupo, comArte) {
     ]
   ];
   if (comArte) linhas.push([{ text: '🖼 Gerar arte', callback_data: `arte|${destino}|${grupo}` }]);
+  if (zap) linhas.push(zap);
+  else if (sendflowLigado() && GRUPOS[grupo]) {
+    const fim = `|${destino}|${grupo}|${enviados}`;
+    linhas.push(enviados.split('.').includes(grupo)
+      ? [{ text: `✔️ Já foi pros grupos do ${GRUPOS[grupo].nome}`, callback_data: 'zapfeito' + fim }]
+      : [{ text: `📲 Enviar nos grupos do ${GRUPOS[grupo].nome}`, callback_data: 'zap' + fim }]);
+  }
   return { inline_keyboard: linhas };
+}
+
+const botoes = markup => ((markup && markup.inline_keyboard) || []).flat();
+const temBotaoArte = markup => botoes(markup).some(b => (b.callback_data || '').startsWith('arte|'));
+// Grupos do WhatsApp pra onde a oferta já foi, lidos do botão de envio
+function enviadosDe(markup) {
+  const b = botoes(markup).find(x => (x.callback_data || '').startsWith('zap'));
+  return b ? b.callback_data.split('|')[3] || '' : '';
 }
 
 // Qual rodapé está marcado (✅) nos botões de uma resposta do bot
@@ -157,10 +184,10 @@ async function responderComArte(original, png, destino, grupo, resposta) {
   const chat_id = original.chat.id;
   const reply_parameters = { message_id: original.message_id, allow_sending_without_reply: true };
   if (saida.length <= LIMITE_LEGENDA) {
-    await enviarFoto({ chat_id, caption: saida, parse_mode, reply_markup: teclado(destino, grupo, false), reply_parameters }, png);
+    await enviarFoto({ chat_id, caption: saida, parse_mode, reply_markup: teclado(destino, grupo), reply_parameters }, png);
   } else {
     await enviarFoto({ chat_id, reply_parameters }, png);
-    await tg('sendMessage', { chat_id, text: saida.slice(0, LIMITE_TEXTO), parse_mode, reply_markup: teclado(destino, grupo, false), reply_parameters, link_preview_options: previa(original, destino) });
+    await tg('sendMessage', { chat_id, text: saida.slice(0, LIMITE_TEXTO), parse_mode, reply_markup: teclado(destino, grupo), reply_parameters, link_preview_options: previa(original, destino) });
   }
   await avisarFalhaEncurtador(falhas, chat_id);
 }
@@ -189,7 +216,7 @@ async function novaOferta(msg) {
   const base = {
     chat_id: msg.chat.id,
     parse_mode,
-    reply_markup: teclado(destino, grupo, true),
+    reply_markup: teclado(destino, grupo, { comArte: true }),
     reply_parameters: { message_id: msg.message_id, allow_sending_without_reply: true }
   };
   if (MIDIA.some(k => msg[k]) && saida.length <= LIMITE_LEGENDA) {
@@ -249,7 +276,86 @@ async function trocarCapa(msg) {
   await avisarFotoPequena(msg, msg.chat.id);
 }
 
-async function botao(cb) {
+// Botões do envio pro WhatsApp: "zap" pede confirmação, "zapok" envia, "zapnao" cancela
+async function zap(cb, partes, original, host) {
+  const [acao, destino, grupo, enviados = ''] = partes;
+  const resposta = cb.message;
+  const chat_id = resposta.chat.id;
+  const avisar = (text, show_alert = false) => tg('answerCallbackQuery', { callback_query_id: cb.id, text, show_alert });
+  const opcoes = { comArte: temBotaoArte(resposta.reply_markup), enviados };
+  const trocarTeclado = reply_markup => tg('editMessageReplyMarkup', { chat_id, message_id: resposta.message_id, reply_markup });
+  const nome = GRUPOS[grupo] ? GRUPOS[grupo].nome : grupo;
+
+  if (acao === 'zapfeito') return avisar('Essa oferta já foi pros grupos. Pra mandar de novo, encaminhe a oferta pra mim outra vez.', true);
+  if (!podeDisparar(cb.from.id)) {
+    return avisar('Pra enviar nos grupos, o bot precisa estar fechado só pra equipe: coloque os IDs em ALLOWED_USERS na Vercel.', true);
+  }
+  if (acao === 'zapnao') {
+    await trocarTeclado(teclado(destino, grupo, opcoes));
+    return avisar('Envio cancelado.');
+  }
+  if (acao === 'zap') {
+    // Já confere a configuração e conta os grupos antes de pedir a confirmação
+    let envio;
+    try {
+      envio = await prepararEnvio(grupo);
+    } catch (e) {
+      console.error(e);
+      return avisar('Não deu pra enviar: ' + e.message, true);
+    }
+    const fim = `|${destino}|${grupo}|${enviados}`;
+    await trocarTeclado(teclado(destino, grupo, {
+      ...opcoes,
+      zap: [
+        { text: `✅ Confirmar: ${envio.groupIds.length} grupos`, callback_data: 'zapok' + fim },
+        { text: 'Cancelar', callback_data: 'zapnao' + fim }
+      ]
+    }));
+    return avisar(`Vai pros ${envio.groupIds.length} grupos do ${nome}. Confira a oferta e toque em Confirmar.`);
+  }
+
+  // zapok: manda o texto do WhatsApp (com o rodapé do grupo) e a arte, se a resposta for a arte
+  await avisar('Enviando...');
+  try {
+    const { saida } = await montar(original, 'wa', grupo, resposta);
+    const foto = resposta.photo && resposta.photo[resposta.photo.length - 1];
+    const envio = await prepararEnvio(grupo);
+    const n = await enviarProsGrupos(envio, { texto: saida, imagem: foto ? linkPublicoDaFoto(host, foto.file_id) : null });
+    await trocarTeclado(teclado(destino, grupo, { ...opcoes, enviados: [...enviados.split('.').filter(Boolean), grupo].join('.') }));
+    await tg('sendMessage', {
+      chat_id, text: `📲 Oferta na fila do SendFlow pros ${n} grupos do ${nome}.`,
+      reply_parameters: { message_id: resposta.message_id, allow_sending_without_reply: true }
+    });
+  } catch (e) {
+    console.error(e);
+    await trocarTeclado(teclado(destino, grupo, opcoes));
+    await tg('sendMessage', { chat_id, text: 'Não consegui mandar pro WhatsApp.\nMotivo: ' + e.message });
+  }
+}
+
+// /sendflow: mostra o que falta configurar e os lançamentos da conta, com os IDs
+async function statusSendflow(chatId) {
+  const ok = v => (v ? '✅' : '❌');
+  const linhas = [
+    'Envio pro WhatsApp (SendFlow)',
+    `${ok(sendflowLigado())} Chave da API (SENDFLOW_API_KEY)`,
+    `${ok(equipe().length)} Equipe fechada (ALLOWED_USERS)`,
+    `${ok(lancamentoDoGrupo('jb'))} Lançamento do ${GRUPOS.jb.nome} (SENDFLOW_LANCAMENTO_JB)`,
+    `${ok(lancamentoDoGrupo('ind'))} Lançamento do ${GRUPOS.ind.nome} (SENDFLOW_LANCAMENTO_INDICA)`
+  ];
+  if (sendflowLigado()) {
+    try {
+      const lista = await lancamentos();
+      linhas.push('', lista.length ? 'Lançamentos da conta (nome: ID):' : 'Nenhum lançamento ativo na conta.');
+      for (const r of lista.slice(0, 30)) linhas.push(`• ${r.name || r.title || 'sem nome'}: ${r.id}`);
+    } catch (e) {
+      linhas.push('', 'Não consegui ler os lançamentos.', 'Motivo: ' + e.message);
+    }
+  }
+  await tg('sendMessage', { chat_id: chatId, text: linhas.join('\n') });
+}
+
+async function botao(cb, host) {
   const partes = (cb.data || '').split('|');
   const ehArte = partes[0] === 'arte';
   const [destino, grupo] = ehArte ? partes.slice(1) : partes;
@@ -259,12 +365,12 @@ async function botao(cb) {
     await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Não achei a oferta original. Mande ela de novo.', show_alert: true });
     return;
   }
+  if (partes[0].startsWith('zap')) return zap(cb, partes, original, host);
   if (ehArte) return arte(cb, original, destino, grupo);
   const { saida, parse_mode } = await montar(original, destino, grupo, resposta);
-  // Mantém o botão "Gerar arte" só onde ele já estava
-  const comArte = ((resposta.reply_markup && resposta.reply_markup.inline_keyboard) || [])
-    .some(l => l.some(b => (b.callback_data || '').startsWith('arte|')));
-  const comum = { chat_id: resposta.chat.id, message_id: resposta.message_id, parse_mode, reply_markup: teclado(destino, grupo, comArte) };
+  // Mantém o botão "Gerar arte" só onde ele já estava, e lembra pra quais grupos já foi
+  const opcoes = { comArte: temBotaoArte(resposta.reply_markup), enviados: enviadosDe(resposta.reply_markup) };
+  const comum = { chat_id: resposta.chat.id, message_id: resposta.message_id, parse_mode, reply_markup: teclado(destino, grupo, opcoes) };
   // Arte trocando entre Jogo Barato e JB Indica: refaz a imagem no outro modelo
   if (resposta.photo && modeloDoGrupo(grupoMarcado(resposta.reply_markup)) !== modeloDoGrupo(grupo) && saida.length <= LIMITE_LEGENDA) {
     await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Trocando a arte...' });
@@ -300,7 +406,7 @@ export default async function handler(req, res) {
   const u = req.body || {};
   try {
     if (u.callback_query) {
-      if (permitido(u.callback_query.from.id)) await botao(u.callback_query);
+      if (permitido(u.callback_query.from.id)) await botao(u.callback_query, req.headers['x-forwarded-host'] || req.headers.host);
     } else if (u.message && u.message.chat.type === 'private') {
       const msg = u.message;
       const cmd = (msg.text || '').trim().split(/[\s@]/)[0];
@@ -311,6 +417,8 @@ export default async function handler(req, res) {
         await tg('sendMessage', { chat_id: msg.chat.id, text: `Este bot é só da equipe do Jogo Barato. Pra liberar, mande este número pra quem cuida do bot: ${msg.from.id}` });
       } else if (cmd === '/start' || cmd === '/ajuda') {
         await tg('sendMessage', { chat_id: msg.chat.id, text: AJUDA });
+      } else if (cmd === '/sendflow') {
+        await statusSendflow(msg.chat.id);
       } else {
         const respostaComFoto = msg.photo && !msg.caption && msg.reply_to_message && msg.reply_to_message.from && msg.reply_to_message.from.is_bot;
         if (respostaComFoto) await trocarCapa(msg);

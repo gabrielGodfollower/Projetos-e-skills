@@ -1,5 +1,8 @@
 {
   "functions": {
     "api/telegram.js": { "maxDuration": 30, "includeFiles": "assets/**" }
-  }
+  },
+  "rewrites": [
+    { "source": "/arte/:s/:f", "destination": "/api/imagem?s=:s&f=:f" }
+  ]
 }
