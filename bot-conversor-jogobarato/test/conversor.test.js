@@ -176,6 +176,20 @@ test('quadro do preço do Jogo Barato: linhas centralizadas em 931, sem linha de
   assert.ok(linhasDoPrecoJB('123.456.789,00', 'à vista')[1].tam < 60);
 });
 
+test('imagem com duas capas lado a lado usa mais largura; as outras seguem o HTML', async () => {
+  const { areaDoProduto } = await import('../lib/arte.js');
+  // Capa sozinha e controle: 90% da área de 640x580 do HTML, centralizada em (600, 571)
+  for (const t of [{ w: 600, h: 750 }, { w: 1280, h: 897 }]) {
+    assert.deepEqual(areaDoProduto(t), { left: 312, top: 310, width: 576, height: 522 });
+  }
+  // Duas capas: mesma altura, até 940 px de largura, no mesmo centro
+  const bundle = areaDoProduto({ w: 1220, h: 720 });
+  assert.equal(bundle.height, 522);
+  assert.ok(bundle.width > 880 && bundle.width <= 940);
+  assert.equal(bundle.left + bundle.width / 2, 600);
+  assert.equal(areaDoProduto({ w: 3000, h: 600 }).width, 940);
+});
+
 test('fundo do Jogo Barato é o original de 1200x1000', async () => {
   const { tamanhoImagem } = await import('../lib/arte.js');
   const { readFileSync } = await import('node:fs');

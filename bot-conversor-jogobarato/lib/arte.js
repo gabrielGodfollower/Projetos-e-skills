@@ -185,8 +185,10 @@ function capaImg(capa, tipo, { left, top, width, height, vertical = 0.5 }) {
 // fundo original de 1200x1000. Posições em pixels da arte final.
 const LARGURA_JB = 1200;
 export const LAYOUT_JB = {
-  // A imagem do produto encaixa inteira em 90% desta área, no centro
-  produto: { left: 280, top: 281, width: 640, height: 580, escala: 0.9 },
+  // A imagem do produto encaixa inteira em 90% desta área, no centro. Imagem bem
+  // larga (duas ou mais capas lado a lado) pode passar dessa largura, até 940 px,
+  // para ficar com a mesma altura de uma capa sozinha
+  produto: { left: 280, top: 281, width: 640, height: 580, escala: 0.9, larga: 1.6, larguraMax: 940 },
   // Nome do produto: Baloo 2 Medium, linha de base em 248; diminui se passar de 1134 px
   titulo: { fonte: 'baloo2-500.ttf', tam: 25, x: 32, base: 248, cor: '#082147', larguraMax: 1134 },
   // Preço no quadro azul: linhas empilhadas com 3 px entre elas, o bloco centralizado
@@ -198,6 +200,15 @@ export const LAYOUT_JB = {
     baixo: { fonte: 'teko-400.ttf', peso: 400, tam: 26 }
   }
 };
+
+// Área onde a imagem do produto encaixa, centralizada no mesmo ponto do HTML
+export function areaDoProduto(tamanho) {
+  const A = LAYOUT_JB.produto;
+  let w = A.width * A.escala;
+  const h2 = A.height * A.escala;
+  if (tamanho && tamanho.w / tamanho.h >= A.larga) w = Math.min(A.larguraMax, h2 * tamanho.w / tamanho.h);
+  return { left: A.left + (A.width - w) / 2, top: A.top + (A.height - h2) / 2, width: w, height: h2 };
+}
 
 // Linhas do quadro do preço: "a partir de", o valor e "parcelado" (no Pix ou à
 // vista essa última linha não aparece, como no HTML)
@@ -229,10 +240,7 @@ const JOGO_BARATO = {
   largura: LARGURA_JB, altura: 1000, fundo: png64('fundo-arte.png'),
   camadas({ titulo, preco, condicao, capa, tipo }) {
     const c = [];
-    if (tipo) {
-      const A = LAYOUT_JB.produto, e = A.escala, w = A.width * e, hh = A.height * e;
-      c.push(capaImg(capa, tipo, { left: A.left + (A.width - w) / 2, top: A.top + (A.height - hh) / 2, width: w, height: hh }));
-    }
+    if (tipo) c.push(capaImg(capa, tipo, areaDoProduto(tamanhoImagem(capa))));
     if (titulo) {
       const T = LAYOUT_JB.titulo, tam = tamanhoQueCabe(T.fonte, titulo, T.tam, T.larguraMax);
       c.push(naBase(titulo, { left: T.x, color: T.cor, fontFamily: 'Baloo', fontWeight: 500, tam, linhaDeBase: T.base, base: medir(T.fonte, titulo, tam).base }));
