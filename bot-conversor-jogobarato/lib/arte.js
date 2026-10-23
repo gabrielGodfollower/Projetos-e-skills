@@ -18,11 +18,16 @@ const AZUL_TEXTO = '#0a1b37';
 export function dadosDaOferta(texto) {
   const linhas = texto.split('\n').map(l => l.trim()).filter(Boolean);
   // Tira as marcas de formatação (*negrito*, _itálico_...) e os emojis do começo
-  let titulo = (linhas[0] || '').replace(/[*_~`|]/g, '').replace(/^[^\p{L}\p{N}[]+/u, '');
+  let titulo = (linhas[0] || '').replace(/[*_~`|]/g, '');
+  // A loja entre colchetes ("[KaBuM!]") sai do título, esteja onde estiver
   let loja = '';
-  const m = titulo.match(/^\[([^\]]+)\]\s*/);
-  if (m) { loja = m[1]; titulo = titulo.slice(m[0].length); }
-  titulo = titulo.replace(/^[^\p{L}\p{N}]+/u, '').trim();
+  titulo = titulo.replace(/\[([^\]]+)\]/g, (_, l) => { loja = loja || l.trim(); return ' '; });
+  // Chamadas em maiúsculas no começo ("AINDA DISPONÍVEL!", "🚨 BAIXOU!") também saem
+  let chamada;
+  while ((chamada = titulo.match(/^[^\p{Ll}!]{1,40}!+\s*/u)) && /\p{Lu}/u.test(chamada[0]) && /\p{L}/u.test(titulo.slice(chamada[0].length))) {
+    titulo = titulo.slice(chamada[0].length);
+  }
+  titulo = titulo.replace(/^[^\p{L}\p{N}]+/u, '').replace(/\s{2,}/g, ' ').trim();
   if (/^(?:https?:\/\/|www\.)\S+$/i.test(titulo)) titulo = '';
   // Padrão do Jogo Barato: "à vista" ou "parcelado", conforme a linha do preço
   const linhaPreco = linhas.find(l => /R\$\s?\d/.test(l)) || '';
@@ -35,6 +40,24 @@ export function dadosDaOferta(texto) {
 export function tipoImagem(buf) {
   if (buf[0] === 0xff && buf[1] === 0xd8) return 'image/jpeg';
   if (buf[0] === 0x89 && buf[1] === 0x50) return 'image/png';
+  return null;
+}
+
+// Largura e altura da imagem, lidas do cabeçalho do PNG ou do JPEG
+export function tamanhoImagem(buf) {
+  if (tipoImagem(buf) === 'image/png') return { w: buf.readUInt32BE(16), h: buf.readUInt32BE(20) };
+  if (tipoImagem(buf) === 'image/jpeg') {
+    let i = 2;
+    while (i + 9 < buf.length) {
+      if (buf[i] !== 0xff) { i++; continue; }
+      const marca = buf[i + 1];
+      // Marcadores SOF (início do quadro) trazem as medidas
+      if (marca >= 0xc0 && marca <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marca)) {
+        return { h: buf.readUInt16BE(i + 5), w: buf.readUInt16BE(i + 7) };
+      }
+      i += 2 + buf.readUInt16BE(i + 2);
+    }
+  }
   return null;
 }
 
@@ -92,10 +115,24 @@ export function modeloDoGrupo(grupo) {
   return grupo === 'ind' ? 'ind' : 'jb';
 }
 
-const capaImg = (capa, tipo, style) => ({
-  type: 'img',
-  props: { src: `data:${tipo};base64,${capa.toString('base64')}`, style: { position: 'absolute', objectFit: 'contain', ...style } }
-});
+// Encaixa a imagem inteira na área (como "contain"); "vertical" diz onde ela fica
+// quando sobra espaço em cima e embaixo (0 = no topo, 0.5 = no meio, 1 = embaixo)
+function capaImg(capa, tipo, { left, top, width, height, vertical = 0.5 }) {
+  const src = `data:${tipo};base64,${capa.toString('base64')}`;
+  const t = tamanhoImagem(capa);
+  if (!t || !t.w || !t.h) {
+    return { type: 'img', props: { src, style: { position: 'absolute', objectFit: 'contain', left, top, width, height } } };
+  }
+  const escala = Math.min(width / t.w, height / t.h);
+  const w = Math.round(t.w * escala), h2 = Math.round(t.h * escala);
+  return {
+    type: 'img',
+    props: {
+      src, width: w, height: h2,
+      style: { position: 'absolute', left: Math.round(left + (width - w) / 2), top: Math.round(top + (height - h2) * vertical), width: w, height: h2 }
+    }
+  };
+}
 
 // ---------- modelo Jogo Barato ----------
 // Título numa linha no alto, capa no meio, preço na caixa azul do canto
@@ -119,7 +156,9 @@ const JOGO_BARATO = {
       position: 'absolute', left: 33, top: 212, width: 1040,
       color: AZUL_TEXTO, fontFamily: 'Saira', fontSize: tamanhoTitulo(titulo), lineHeight: 1.25
     }, titulo)];
-    if (tipo) c.push(capaImg(capa, tipo, { left: 249, top: 343, width: 700, height: 527 }));
+    // Capa em pé ocupa a altura toda; produto deitado (console, bundle) usa a largura
+    // toda e fica um pouco abaixo do meio, como no Photoshop
+    if (tipo) c.push(capaImg(capa, tipo, { left: 130, top: 343, width: 940, height: 527, vertical: 0.66 }));
     // Caixa do preço: redesenhada por cima da do fundo, que já tem "R$" escrito
     if (preco) {
       c.push(h('div', {

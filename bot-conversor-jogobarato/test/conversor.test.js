@@ -126,3 +126,19 @@ test('título sem marcas de formatação nem colchete sobrando', async () => {
     assert.deepEqual([d.titulo, d.loja, d.preco, d.condicao], ['Pré-venda de Dragon’s Dogma 2: Dark Arisen (PS5)', 'Amazon', '194,92', 'à vista']);
   }
 });
+
+test('título sem chamada em maiúsculas e sem loja no meio', async () => {
+  const { dadosDaOferta } = await import('../lib/arte.js');
+  const d = dadosDaOferta('AINDA DISPONÍVEL! [KaBuM!] Bundle Console PlayStation 5 Slim + 2 Jogos\n• R$ 3.999,00 em até 10x');
+  assert.deepEqual([d.titulo, d.loja, d.preco, d.condicao], ['Bundle Console PlayStation 5 Slim + 2 Jogos', 'KaBuM!', '3.999,00', 'parcelado']);
+  assert.equal(dadosDaOferta('🚨 BAIXOU! Mario Kart World!').titulo, 'Mario Kart World!');
+  assert.equal(dadosDaOferta('Pré-venda de Dragon’s Dogma 2 (PS5)').titulo, 'Pré-venda de Dragon’s Dogma 2 (PS5)');
+  assert.equal(dadosDaOferta('GTA VI (PS5)').titulo, 'GTA VI (PS5)');
+  assert.equal(dadosDaOferta('GTA VI!').titulo, 'GTA VI!');
+});
+
+test('lê o tamanho de PNG e JPEG', async () => {
+  const { tamanhoImagem } = await import('../lib/arte.js');
+  const { readFileSync } = await import('node:fs');
+  assert.deepEqual(tamanhoImagem(readFileSync(new URL('../assets/fundo-jbindica.png', import.meta.url))), { w: 1200, h: 1000 });
+});
