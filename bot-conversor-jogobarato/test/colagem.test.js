@@ -117,3 +117,45 @@ test('oferta com vários jogos vira colagem com as capas do banco', async () => 
     delete process.env.BANCO_DRIVE_CHAVE;
   }
 });
+
+test('álbum: as fotos que chegam juntas viram uma arte só, com todas', async () => {
+  const fotos = { A: png(300, 200, '<rect width="300" height="200" fill="#c00"/>'), B: png(300, 200, '<rect width="300" height="200" fill="#00c"/>') };
+  const chamadas = [];
+  const fetchOriginal = globalThis.fetch;
+  process.env.TELEGRAM_BOT_TOKEN = 'teste';
+  globalThis.fetch = async (url, op = {}) => {
+    url = String(url);
+    if (!url.startsWith('https://api.telegram.org/')) return fetchOriginal(url, op);
+    if (url.includes('/file/bot')) return new Response(fotos[url.split('/').pop()]);
+    const metodo = url.split('/').pop();
+    const corpo = op.body instanceof FormData ? {} : JSON.parse(op.body || '{}');
+    if (metodo === 'getFile') return new Response(JSON.stringify({ ok: true, result: { file_path: corpo.file_id } }));
+    chamadas.push(metodo);
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 99 } }));
+  };
+  try {
+    const { default: handler } = await import('../api/telegram.js');
+    const res = { status() { return this; }, send() { return this; } };
+    const chat = { id: 7, type: 'private' }, from = { id: 7 };
+    const foto = id => [{ file_id: id, width: 300, height: 200 }];
+    const enviar = message => handler({ method: 'POST', headers: {}, body: { message } }, res);
+    await Promise.all([
+      enviar({ message_id: 1, chat, from, media_group_id: 'g', photo: foto('A'), caption: 'Controle DualSense\nR$ 399,90 no Pix', caption_entities: [] }),
+      enviar({ message_id: 2, chat, from, media_group_id: 'g', photo: foto('B') })
+    ]);
+    // Uma arte com as duas fotos e nenhum aviso de "mande o texto" pela segunda foto
+    assert.deepEqual(chamadas, ['sendPhoto']);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+  }
+});
+
+test('fotos de um álbum valem mais que o banco e viram colagem', async () => {
+  const { arteDaOferta } = await import('../lib/capas.js');
+  const a = png(300, 200, '<rect width="300" height="200" fill="#c00"/>');
+  const arte = await arteDaOferta(OFERTA, { fotos: [a, a] });
+  assert.equal(arte.imagem, 'album');
+  assert.equal(arte.capas, 2);
+  assert.equal((await arteDaOferta(OFERTA, { grupo: 'ind', fotos: [a, a, a] })).imagem, 'album');
+});

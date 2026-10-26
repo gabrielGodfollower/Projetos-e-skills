@@ -357,16 +357,19 @@ const JOGO_BARATO = {
 };
 
 // ---------- modelo JB Indica ----------
-// Título centralizado, preço em preto à direita acima do produto, produto embaixo
+// Título centralizado, preço em preto à direita acima do produto, produto embaixo.
+// Colagem (fotos de um álbum) na mesma área do produto
+const COLAGEM_IND = { x: 200, y: 470, w: 800, h: 510, maxCapas: 4, corSelo: '#1f1d55' };
 const JB_INDICA = {
   largura: 1200, altura: 1000, fundo: png64('fundo-jbindica.png'),
-  camadas({ titulo, preco, condicao, capa, tipo }) {
+  camadas({ titulo, preco, condicao, capa, tipo, capas }) {
     const tam = titulo.length <= 45 ? 39 : titulo.length <= 60 ? 32 : 27;
     const c = [h('div', {
       position: 'absolute', left: 60, top: 256, width: 1080, justifyContent: 'center', textAlign: 'center',
       color: '#2b2b2b', fontFamily: 'Outfit', fontWeight: 500, fontSize: tam, lineHeight: 1.2
     }, titulo)];
-    if (tipo) c.push(capaImg(capa, tipo, { left: 200, top: 470, width: 800, height: 510 }));
+    if (capas && capas.length) c.push(...camadasDaColagem(capas, COLAGEM_IND));
+    else if (tipo) c.push(capaImg(capa, tipo, { left: 200, top: 470, width: 800, height: 510 }));
     if (preco) {
       c.push(h('div', {
         position: 'absolute', right: 30, top: 396, flexDirection: 'column', alignItems: 'flex-end',
@@ -382,7 +385,7 @@ const JB_INDICA = {
 
 const MODELOS = { jb: JOGO_BARATO, ind: JB_INDICA };
 
-// "capas" (várias, só no modelo Jogo Barato) monta a colagem no lugar da capa única
+// "capas" (várias capas ou fotos) monta a colagem no lugar da capa única
 export async function gerarArte({ titulo, preco, condicao = 'à vista', capa, capas, modelo = 'jb' }) {
   const m = MODELOS[modelo] || JOGO_BARATO;
   const tipo = capa && tipoImagem(capa);

@@ -8,6 +8,7 @@ Bot do Telegram que faz o mesmo que o conversor em HTML: pega uma oferta, conver
 2. O bot já responde com a **arte** no padrão do Jogo Barato e o texto para o WhatsApp na legenda, com o rodapé do **Jogo Barato**. Segure a mensagem e toque em **Copiar**.
 3. Os botões trocam o rodapé (**Jogo Barato**, **JB Indica** ou **Sem rodapé**) e o destino (**Para WhatsApp** ou **Para Telegram**). Se a oferta já vier com um rodapé ("Grupo de Promoções do...", "Canais de Promoções do..."), ele é trocado, não duplicado.
 4. Pra trocar a capa, responda à arte com outra foto. Se a foto for pequena, o bot avisa.
+   Oferta mandada com várias fotos de uma vez (álbum, como as cores de um controle), ou várias fotos respondendo à arte, vira **colagem** com todas, no mesmo desenho da colagem do banco. O Telegram manda cada foto do álbum como uma mensagem separada; o bot junta as fotos na memória da função (sem banco de dados), e se uma foto chegar depois da arte pronta, ele refaz a arte. Se a Vercel mandar as fotos para instâncias diferentes, a arte sai com a foto que veio com o texto.
 5. Sem foto, o bot procura a capa no banco de capas (se estiver ligado) e depois na página do link. Se não conseguir, responde só com o texto e pede a foto.
 6. Oferta com dois ou mais jogos vira **colagem**, com a capa de cada jogo achada no banco (só no rodapé do Jogo Barato, como no conversor em HTML). Se faltar a capa de algum, o bot avisa quais. Pra usar uma foto só no lugar da colagem, responda à arte com ela.
 

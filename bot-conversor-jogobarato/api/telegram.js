@@ -5,7 +5,8 @@
 //    JB Indica, sem rodapé) e o destino (WhatsApp ou Telegram).
 // 3. Ao tocar num botão, o bot relê a mensagem original (a que ele respondeu)
 //    e edita a resposta. Assim nada precisa ser guardado em banco de dados.
-// 4. Respondendo à arte com outra foto, o bot troca a capa.
+// 4. Respondendo à arte com outra foto, o bot troca a capa. Oferta mandada com
+//    várias fotos (álbum), ou resposta com várias fotos, vira colagem.
 //    Com o banco de capas ligado, a capa vem do Google Drive pelo nome do jogo, e
 //    oferta com vários jogos vira colagem (lib/capas.js).
 // 5. Links de lojas viram links jogobara.to (YOURLS), se YOURLS_SIGNATURE estiver configurado.
@@ -29,7 +30,7 @@ Como usar:
 • Eu respondo com a arte pronta e o texto para o WhatsApp na legenda. Segure a mensagem e toque em Copiar.
 • Os botões trocam o rodapé (${GRUPOS.jb.nome}, ${GRUPOS.ind.nome} ou sem rodapé) e o destino.
 • Em "Para Telegram" a legenda vira a oferta formatada, pronta para encaminhar no grupo.
-• Pra trocar a capa, responda à arte com outra foto.
+• Pra trocar a capa, responda à arte com outra foto. Mandando várias fotos de uma vez (álbum), com a oferta ou respondendo à arte, a arte vira uma colagem com todas.
 • Com o banco de capas ligado, eu acho a capa do jogo no Google Drive pelo nome, e oferta com vários jogos vira colagem. /banco mostra a configuração e "/banco nome do jogo" mostra o que eu acho.
 • Com o SendFlow ligado, o botão 📲 manda a arte e o texto pros grupos do WhatsApp do rodapé escolhido (pede confirmação antes). /sendflow mostra a configuração.
 
@@ -174,15 +175,87 @@ function capaPeloLink(msg, texto, entities) {
   };
 }
 
-// Arte da oferta: colagem, foto da oferta, capa do banco ou imagem do link (veja
-// lib/capas.js). O modelo acompanha o rodapé: JB Indica tem arte própria
+// Arte da oferta: fotos do álbum, colagem do banco, foto da oferta, capa do banco ou
+// imagem do link (veja lib/capas.js). O modelo acompanha o rodapé: JB Indica tem arte própria
 async function tentarArte(msg, texto, entities, grupo, opcoes = {}) {
   try {
-    return await arteDaOferta(texto, { grupo, foto: await fotoDaOferta(msg), capaDoLink: capaPeloLink(msg, texto, entities), ...opcoes });
+    const foto = opcoes.fotos ? null : await fotoDaOferta(msg);
+    return await arteDaOferta(texto, { grupo, foto, capaDoLink: capaPeloLink(msg, texto, entities), ...opcoes });
   } catch (e) {
     console.error(e);
     return null;
   }
+}
+
+// ---------- álbuns ----------
+// O Telegram manda cada foto de um álbum como uma mensagem separada, quase ao mesmo
+// tempo, e só uma delas traz o texto. Sem banco de dados, o bot junta as fotos na
+// memória da função pelo media_group_id: a primeira mensagem que chega espera as
+// outras e faz uma arte só, com todas as fotos. Foto que chega depois da arte pronta
+// refaz a arte. Se as mensagens caírem em instâncias diferentes da Vercel, a arte sai
+// com a foto que veio com o texto, como antes.
+const ALBUNS = new Map();
+const VIDA_ALBUM = 30 * 60 * 1000;
+const dormir = ms => new Promise(r => setTimeout(r, ms));
+
+function albumDe(msg) {
+  const agora = Date.now();
+  for (const [k, a] of ALBUNS) if (agora - a.criado > VIDA_ALBUM) ALBUNS.delete(k);
+  const chave = `${msg.chat.id}:${msg.media_group_id}`;
+  if (!ALBUNS.has(chave)) ALBUNS.set(chave, { criado: agora, ultima: agora, fotos: new Map(), usadas: 0, fila: Promise.resolve() });
+  return ALBUNS.get(chave);
+}
+
+// Fotos do álbum na ordem em que foram mandadas
+const idsDoAlbum = a => [...a.fotos.entries()].sort((x, y) => x[0] - y[0]).map(([, id]) => id);
+
+// Fotos de um álbum que ainda está na memória (para os botões refazerem a arte igual)
+function fotosGuardadas(msg) {
+  const a = msg.media_group_id && ALBUNS.get(`${msg.chat.id}:${msg.media_group_id}`);
+  return a && a.fotos.size >= 2 ? idsDoAlbum(a) : null;
+}
+
+async function baixarFotos(ids) {
+  const fotos = await Promise.all(ids.map(id => baixarArquivo(id).catch(e => { console.error(e); return null; })));
+  return fotos.filter(Boolean);
+}
+
+// Opções da arte com as fotos do álbum guardadas, se tiver
+async function comFotosGuardadas(msg, opcoes) {
+  const ids = fotosGuardadas(msg);
+  return ids ? { ...opcoes, fotos: await baixarFotos(ids) } : opcoes;
+}
+
+// Refaz a arte do álbum com todas as fotos que chegaram até agora e troca a imagem
+// da mensagem "arte" (com a mesma legenda e os mesmos botões)
+function refazerAlbum(a, msg, texto, entities, grupo, opcoes, arte) {
+  return () => (a.fila = a.fila.then(async () => {
+    const ids = idsDoAlbum(a);
+    if (ids.length <= a.usadas) return;
+    a.usadas = ids.length;
+    const nova = await tentarArte(msg, texto, entities, grupo, { ...opcoes, fotos: await baixarFotos(ids) });
+    if (nova && nova.png) await trocarFoto({ chat_id: msg.chat.id, ...arte }, nova.png);
+  }).catch(e => console.error(e)));
+}
+
+async function fotoDeAlbum(msg) {
+  const a = albumDe(msg);
+  a.fotos.set(msg.message_id, msg.photo[msg.photo.length - 1].file_id);
+  a.ultima = Date.now();
+  if (typeof msg.caption === 'string') a.oferta = msg;
+  else if (msg.reply_to_message && msg.reply_to_message.from && msg.reply_to_message.from.is_bot) a.resposta = a.resposta || msg;
+  // A arte já saiu: refaz com esta foto também
+  if (a.refazer) return a.refazer();
+  // Outra mensagem do álbum já está montando a arte
+  if (a.lider) return;
+  a.lider = msg.message_id;
+  // Espera as outras fotos: até passar 1,2 s sem chegar nenhuma (no máximo 4 s)
+  while (Date.now() - a.ultima < 1200 && Date.now() - a.criado < 4000) await dormir(200);
+  if (a.oferta) await novaOferta(a.oferta, a);
+  else if (a.resposta) await trocarCapa(a.resposta, a);
+  else await tg('sendMessage', { chat_id: msg.chat.id, text: 'Mande uma oferta com texto (ou a foto da capa com a oferta na legenda) que eu converto.' });
+  // Chegou foto enquanto a arte era feita
+  if (a.refazer && a.fotos.size > a.usadas) await a.refazer();
 }
 
 // Colagem: avisa quais jogos ficaram sem capa e que a foto da oferta ficou de fora
@@ -207,16 +280,23 @@ async function responderComArte(original, png, destino, grupo, resposta) {
   const { saida, parse_mode, falhas } = await montar(original, destino, grupo, resposta);
   const chat_id = original.chat.id;
   const reply_parameters = { message_id: original.message_id, allow_sending_without_reply: true };
+  // Devolve a mensagem da arte com a legenda e os botões, para um álbum poder refazê-la
+  let arte;
   if (saida.length <= LIMITE_LEGENDA) {
-    await enviarFoto({ chat_id, caption: saida, parse_mode, reply_markup: teclado(destino, grupo), reply_parameters }, png);
+    const reply_markup = teclado(destino, grupo);
+    const m = await enviarFoto({ chat_id, caption: saida, parse_mode, reply_markup, reply_parameters }, png);
+    arte = { message_id: m.message_id, caption: saida, parse_mode, reply_markup };
   } else {
-    await enviarFoto({ chat_id, reply_parameters }, png);
+    const m = await enviarFoto({ chat_id, reply_parameters }, png);
+    arte = { message_id: m.message_id };
     await tg('sendMessage', { chat_id, text: saida.slice(0, LIMITE_TEXTO), parse_mode, reply_markup: teclado(destino, grupo), reply_parameters, link_preview_options: previa(original, destino) });
   }
   await avisarFalhaEncurtador(falhas, chat_id);
+  return arte;
 }
 
-async function novaOferta(msg) {
+// "album": as fotos mandadas junto com a oferta (veja fotoDeAlbum)
+async function novaOferta(msg, album) {
   const c = conteudo(msg);
   if (!c || !c.texto.trim()) {
     await tg('sendMessage', { chat_id: msg.chat.id, text: 'Mande uma oferta com texto (ou a foto da capa com a oferta na legenda) que eu converto.' });
@@ -227,9 +307,15 @@ async function novaOferta(msg) {
 
   // Já responde com a arte quando acha imagem (colagem, foto da oferta, banco ou link)
   if (!msg.video && !msg.animation && !msg.document) {
-    const arte = await tentarArte(msg, c.texto, c.entities, grupo);
+    const ids = album ? idsDoAlbum(album) : [];
+    const opcoes = ids.length ? { fotos: await baixarFotos(ids) } : {};
+    const arte = await tentarArte(msg, c.texto, c.entities, grupo, opcoes);
     if (arte && arte.png) {
-      await responderComArte(msg, arte.png, destino, grupo);
+      const enviada = await responderComArte(msg, arte.png, destino, grupo);
+      if (album) {
+        album.usadas = ids.length;
+        album.refazer = refazerAlbum(album, msg, c.texto, c.entities, grupo, {}, enviada);
+      }
       if (arte.imagem === 'colagem') await avisarColagem(msg, arte);
       if (arte.imagem === 'foto') await avisarFotoPequena(msg, msg.chat.id);
       return;
@@ -257,7 +343,7 @@ async function novaOferta(msg) {
 async function arte(cb, original, destino, grupo) {
   await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Gerando a arte...' });
   const c = conteudo(original);
-  const arte = await tentarArte(original, c.texto, c.entities, grupo, { semImagem: true });
+  const arte = await tentarArte(original, c.texto, c.entities, grupo, await comFotosGuardadas(original, { semImagem: true }));
   if (!arte || !arte.png) {
     await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não consegui gerar a arte dessa oferta.' });
     return;
@@ -267,7 +353,8 @@ async function arte(cb, original, destino, grupo) {
 }
 
 // Você respondeu a uma mensagem do bot com uma foto: refaz a arte com essa foto como capa
-async function trocarCapa(msg) {
+// "album": várias fotos mandadas de uma vez respondendo à arte viram colagem
+async function trocarCapa(msg, album) {
   const base = msg.reply_to_message;
   const legenda = typeof base.caption === 'string' ? base.caption : base.text;
   if (!legenda || !legenda.trim()) {
@@ -278,28 +365,34 @@ async function trocarCapa(msg) {
   // A legenda do bot pode ter *negrito* de WhatsApp; tira as marcas pra ler nome e preço.
   // A foto que a pessoa mandou é a imagem da arte (sem banco nem colagem)
   const texto = semRodape(legenda).texto.replace(/[*_~]/g, '');
-  const arte = await tentarArte(msg, texto, [], grupoMarcado(base.reply_markup), { soFoto: true, semImagem: true });
+  const grupo = grupoMarcado(base.reply_markup);
+  const opcoes = { soFoto: true, semImagem: true };
+  const ids = album ? idsDoAlbum(album) : [];
+  const arte = await tentarArte(msg, texto, [], grupo, ids.length ? { ...opcoes, fotos: await baixarFotos(ids) } : opcoes);
   const png = arte && arte.png;
   if (!png) {
     await tg('sendMessage', { chat_id: msg.chat.id, text: 'Não consegui gerar a arte com essa foto.' });
     return;
   }
+  let enviada;
   if (base.photo) {
     // Troca a imagem da própria arte: a legenda e os botões continuam funcionando
-    await trocarFoto({
-      chat_id: msg.chat.id, message_id: base.message_id, caption: legenda,
-      caption_entities: entities.length ? entities : undefined, reply_markup: base.reply_markup
-    }, png);
+    enviada = { message_id: base.message_id, caption: legenda, caption_entities: entities.length ? entities : undefined, reply_markup: base.reply_markup };
+    await trocarFoto({ chat_id: msg.chat.id, ...enviada }, png);
   } else {
     const cabe = legenda.length <= LIMITE_LEGENDA;
-    await enviarFoto({
-      chat_id: msg.chat.id,
-      caption: cabe ? legenda : undefined,
-      caption_entities: cabe && entities.length ? entities : undefined,
+    enviada = { caption: cabe ? legenda : undefined, caption_entities: cabe && entities.length ? entities : undefined };
+    const m = await enviarFoto({
+      chat_id: msg.chat.id, ...enviada,
       reply_parameters: { message_id: base.message_id, allow_sending_without_reply: true }
     }, png);
+    enviada.message_id = m.message_id;
   }
-  await avisarFotoPequena(msg, msg.chat.id);
+  if (album) {
+    album.usadas = ids.length;
+    album.refazer = refazerAlbum(album, msg, texto, [], grupo, opcoes, enviada);
+  }
+  if (arte.imagem === 'foto') await avisarFotoPequena(msg, msg.chat.id);
 }
 
 // Botões do envio pro WhatsApp: "zap" pede confirmação, "zapok" envia, "zapnao" cancela
@@ -428,7 +521,7 @@ async function botao(cb, host) {
   if (resposta.photo && modeloDoGrupo(grupoMarcado(resposta.reply_markup)) !== modeloDoGrupo(grupo) && saida.length <= LIMITE_LEGENDA) {
     await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Trocando a arte...' });
     const c = conteudo(original);
-    const arte = await tentarArte(original, c.texto, c.entities, grupo, { semImagem: true });
+    const arte = await tentarArte(original, c.texto, c.entities, grupo, await comFotosGuardadas(original, { semImagem: true }));
     if (arte && arte.png) {
       await trocarFoto({ chat_id: comum.chat_id, message_id: comum.message_id, caption: saida, parse_mode, reply_markup: comum.reply_markup }, arte.png);
       return;
@@ -475,7 +568,8 @@ export default async function handler(req, res) {
         await statusBanco(msg.chat.id, (msg.text || '').trim().replace(/^\S+\s*/, ''));
       } else {
         const respostaComFoto = msg.photo && !msg.caption && msg.reply_to_message && msg.reply_to_message.from && msg.reply_to_message.from.is_bot;
-        if (respostaComFoto) await trocarCapa(msg);
+        if (msg.photo && msg.media_group_id) await fotoDeAlbum(msg);
+        else if (respostaComFoto) await trocarCapa(msg);
         else await novaOferta(msg);
       }
     }

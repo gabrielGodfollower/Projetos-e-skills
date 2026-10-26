@@ -14,7 +14,8 @@ export default async function handler(req, res) {
       commands: [
         { command: 'ajuda', description: 'Como usar o conversor' },
         { command: 'id', description: 'Mostra seu ID do Telegram' },
-        { command: 'sendflow', description: 'Configuração do envio pro WhatsApp' }
+        { command: 'sendflow', description: 'Configuração do envio pro WhatsApp' },
+        { command: 'banco', description: 'Confere o banco de capas do Google Drive' }
       ]
     });
     const me = await tg('getMe', {});

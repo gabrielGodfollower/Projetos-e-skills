@@ -3,6 +3,7 @@
 // - oferta com dois ou mais produtos: colagem com a capa de cada um, achada no banco;
 // - um produto só: a foto que veio com a oferta, senão a capa do banco, senão a imagem do link.
 // No JB Indica (e sem banco) a imagem é a foto da oferta ou a do link, como antes.
+// Fotos de um álbum (duas ou mais) viram colagem nos dois modelos, no lugar do banco.
 import { gerarArte, dadosDaOferta, modeloDoGrupo } from './arte.js';
 import { bancoLigado, capaDoBanco } from './banco.js';
 import { produtosDoTexto, primeiraLinhaEhProduto, maisBarato } from './produtos.js';
@@ -17,11 +18,12 @@ async function doBanco(nome, contexto) {
 }
 
 // "foto": a foto que veio com a oferta (ou que a pessoa mandou respondendo à arte).
+// "fotos": as fotos de um álbum, na ordem em que foram mandadas.
 // "soFoto": a pessoa escolheu a foto, então nada de banco nem colagem.
 // "capaDoLink": função que procura a imagem pela página do link, chamada só se precisar.
 // "semImagem": gera a arte mesmo sem achar imagem nenhuma (senão png fica null).
-// Devolve { png, imagem: 'colagem' | 'foto' | 'banco' | 'link' | null, capas, faltam }
-export async function arteDaOferta(texto, { grupo = 'jb', foto = null, soFoto = false, semImagem = false, capaDoLink = async () => null } = {}) {
+// Devolve { png, imagem: 'album' | 'colagem' | 'foto' | 'banco' | 'link' | null, capas, faltam }
+export async function arteDaOferta(texto, { grupo = 'jb', foto = null, fotos = [], soFoto = false, semImagem = false, capaDoLink = async () => null } = {}) {
   const modelo = modeloDoGrupo(grupo);
   const dados = dadosDaOferta(texto);
   const banco = modelo === 'jb' && bancoLigado() && !soFoto;
@@ -34,6 +36,12 @@ export async function arteDaOferta(texto, { grupo = 'jb', foto = null, soFoto = 
     dados.condicao = barato.avista ? 'à vista' : 'parcelado';
     if (primeiraLinhaEhProduto(texto, produtos)) dados.titulo = '';
   }
+
+  // As fotos que a pessoa mandou valem mais que o banco
+  if (fotos.length >= 2) {
+    return { png: await gerarArte({ ...dados, capas: fotos, modelo }), imagem: 'album', capas: fotos.length, faltam: [] };
+  }
+  if (fotos.length) foto = fotos[0];
 
   if (banco && produtos.length >= 2) {
     const achados = await Promise.all(produtos.map(p => doBanco(p.nome, p.bloco)));
