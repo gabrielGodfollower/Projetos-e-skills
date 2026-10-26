@@ -17,6 +17,9 @@
 const LINK = /(https?:\/\/\S+|\b(?:www\.|jogobara\.to\/)\S+)/i;
 const VALOR = /^(?:R\$\s*)?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?(?![\d.,])\s*(.*)$/i;
 
+// "Pré-venda" sai sempre sem o hífen: "Pré venda"
+export const preVenda = t => t.replace(/(pr)([eé])-(venda)/gi, (m, a, e, v) => `${a}${e === 'e' ? 'é' : e === 'E' ? 'É' : e} ${v}`);
+
 const limpar = l => l.replace(/^[\p{Extended_Pictographic}️•▪●➔➡👉🎟\-*\s]+/u, '').replace(/[*_~]/g, '').trim();
 
 function reais(inteiro, centavos) {
@@ -68,8 +71,8 @@ function lerBloco(bloco) {
     if (cupom) { o.cupom = cupom[1]; continue; }
     // Código solto em maiúsculas (com número), como PRIMEGAME5
     if (o.nome && /^[A-Z0-9]{4,20}$/.test(l) && /\d/.test(l) && /[A-Z]/.test(l)) { o.cupom = l; continue; }
-    if (!o.nome) o.nome = l;
-    else o.outras.push(l);
+    if (!o.nome) o.nome = preVenda(l);
+    else o.outras.push(preVenda(l));
   }
   return o;
 }

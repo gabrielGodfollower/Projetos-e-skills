@@ -41,8 +41,8 @@ Until Dawn 1 + 2
 });
 
 test('/lista: título próprio, cupom escrito e preços na mesma linha', () => {
-  const l = montarLista('Pré-venda na Amazon\n\nZelda\ncupom: JOGO10\nR$ 1.299,9 pix / 1.399,90 10x sem juros\nhttps://a.co/x');
-  assert.equal(l.texto, 'Pré-venda na Amazon\n\nZelda\n🎟 Cupom: JOGO10\n👉 https://a.co/x\n• R$ 1.299,90 no Pix\n• R$ 1.399,90 em até 10x sem juros');
+  const l = montarLista('Pré venda na Amazon\n\nZelda\ncupom: JOGO10\nR$ 1.299,9 pix / 1.399,90 10x sem juros\nhttps://a.co/x');
+  assert.equal(l.texto, 'Pré venda na Amazon\n\nZelda\n🎟 Cupom: JOGO10\n👉 https://a.co/x\n• R$ 1.299,90 no Pix\n• R$ 1.399,90 em até 10x sem juros');
   assert.equal(montarLista('só um texto qualquer'), null);
   assert.equal(nomeDaLoja('https://www.amazon.com.br/dp/X'), 'Amazon');
 });
@@ -100,7 +100,7 @@ test('/lista: oferta copiada de outro grupo vira o padrão daqui', async () => {
 Canais de Promoções do Outro Grupo
 👉 https://exemplo.com/redes`;
   const l = montarLista(copiada);
-  assert.equal(l.texto, `(Pré-venda) Controle sem fio DualSense – Edição Limitada Gran Turismo
+  assert.equal(l.texto, `(Pré venda) Controle sem fio DualSense – Edição Limitada Gran Turismo
 
 KaBuM!
 🎟 Cupom: RACERVIP
@@ -131,4 +131,11 @@ test('oferta no estilo de outro grupo é reconhecida; a do Jogo Barato não', as
   assert.equal(estiloDeFora('Controle\n\n* KaBuM!\n🔥 R$ 501,36 à vista\n👉 https://x.com'), true);
   assert.equal(estiloDeFora(montarLista(RASCUNHO).texto), false);
   assert.equal(estiloDeFora('Jogo X (PS5)\n🔥 Oferta relâmpago\nR$ 99,90 no Pix'), false);
+});
+
+test('pré-venda sai sem o hífen', async () => {
+  const { preVenda } = await import('../lib/lista.js');
+  assert.equal(preVenda('(Pré-venda) Controle'), '(Pré venda) Controle');
+  assert.equal(preVenda('PRÉ-VENDA e pre-venda'), 'PRÉ VENDA e pré venda');
+  assert.ok(montarLista('(Pré-venda) Controle\n\n* KaBuM!\n🔥 R$ 501,36 à vista').texto.startsWith('(Pré venda) Controle\n'));
 });
