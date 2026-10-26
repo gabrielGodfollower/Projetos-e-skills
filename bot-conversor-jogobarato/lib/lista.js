@@ -17,8 +17,16 @@
 const LINK = /(https?:\/\/\S+|\b(?:www\.|jogobara\.to\/)\S+)/i;
 const VALOR = /^(?:R\$\s*)?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?(?![\d.,])\s*(.*)$/i;
 
-// "Pré-venda" sai sempre sem o hífen: "Pré venda"
-export const preVenda = t => t.replace(/(pr)([eé])-(venda)/gi, (m, a, e, v) => `${a}${e === 'e' ? 'é' : e === 'E' ? 'É' : e} ${v}`);
+// Título de pré-venda no padrão do Jogo Barato:
+// "(Pré-venda) Controle DualSense – Edição Limitada" → "Pré-venda do Controle DualSense Edição Limitada!"
+const FEMININOS = /^(edi[cç][aã]o|cole[cç][aã]o|vers[aã]o|caixa|cadeira|mesa|tv|smart\s?tv|c[aâ]mera|placa|mem[oó]ria|mochila|camiseta|bolsa|capa|base|esta[cç][aã]o|central|headset)\b/i;
+export function preVenda(t) {
+  const m = t.match(/^\s*[(\[]?\s*pr[eé][\s-]?venda(\s+global)?\s*[)\]]?\s*[-–—:|]?\s*(.+)$/i);
+  if (!m) return t;
+  let resto = m[2].replace(/\s+[-–—|]\s+/g, ' ').replace(/[.!]+$/, '').trim();
+  if (!/^(d[aoe]s?|n[ao]s?|em|para|pra|com)\s/i.test(resto)) resto = (FEMININOS.test(resto) ? 'da ' : 'do ') + resto;
+  return `Pré-venda${m[1] ? ' Global' : ''} ${resto}!`;
+}
 
 const limpar = l => l.replace(/^[\p{Extended_Pictographic}️•▪●➔➡👉🎟\-*\s]+/u, '').replace(/[*_~]/g, '').trim();
 
@@ -71,8 +79,8 @@ function lerBloco(bloco) {
     if (cupom) { o.cupom = cupom[1]; continue; }
     // Código solto em maiúsculas (com número), como PRIMEGAME5
     if (o.nome && /^[A-Z0-9]{4,20}$/.test(l) && /\d/.test(l) && /[A-Z]/.test(l)) { o.cupom = l; continue; }
-    if (!o.nome) o.nome = preVenda(l);
-    else o.outras.push(preVenda(l));
+    if (!o.nome) o.nome = l;
+    else o.outras.push(l);
   }
   return o;
 }
@@ -128,7 +136,7 @@ export function montarLista(rascunho, { loja = '' } = {}) {
   const ofertas = [];
   blocos.forEach((b, i) => {
     const o = lerBloco(b);
-    if (i === 0 && !o.link && !o.precos.length && !o.cupom) { titulo = [o.nome, ...o.outras].join(' '); return; }
+    if (i === 0 && !o.link && !o.precos.length && !o.cupom) { titulo = preVenda([o.nome, ...o.outras].join(' ')); return; }
     // Rodapé de grupo (o nosso entra depois, pelo botão)
     if (/^(canais|grupos?) de promo[cç][oõ]es/i.test(o.nome)) return;
     if (o.nome && (o.link || o.precos.length)) ofertas.push(o);
