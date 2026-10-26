@@ -15,6 +15,7 @@ import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js
 import { tg, baixarArquivo, enviarFoto, trocarFoto, linkPublicoDaFoto } from '../lib/telegram.js';
 import { dadosDaOferta, capaDoLink, modeloDoGrupo } from '../lib/arte.js';
 import { arteDaOferta } from '../lib/capas.js';
+import { montarLista, lojaDoLink } from '../lib/lista.js';
 import { bancoLigado, listarBanco, paises, consultaDe, buscarNoBanco, escolherDoBanco } from '../lib/banco.js';
 import { encurtadorLigado, encurtar, deveEncurtar, linksEmOrdem, trocarLinks } from '../lib/encurtador.js';
 import { sendflowLigado, lancamentoDoGrupo, lancamentos, prepararEnvio, enviarProsGrupos } from '../lib/sendflow.js';
@@ -32,6 +33,7 @@ Como usar:
 • Em "Para Telegram" a legenda vira a oferta formatada, pronta para encaminhar no grupo.
 • Pra trocar a capa, responda à arte com outra foto. Mandando várias fotos de uma vez (álbum), com a oferta ou respondendo à arte, a arte vira uma colagem com todas.
 • Com o banco de capas ligado, eu acho a capa do jogo no Google Drive pelo nome, e oferta com vários jogos vira colagem. /banco mostra a configuração e "/banco nome do jogo" mostra o que eu acho.
+• /lista monta uma lista de várias ofertas: mande /lista na primeira linha e, embaixo, cada oferta separada por uma linha em branco (nome, cupom, link, preços e "Frete Grátis", em qualquer ordem). Eu coloco os emojis, ordeno do menor para o maior preço e faço a arte. Mande /lista sozinho para ver um exemplo.
 • Com o SendFlow ligado, o botão 📲 manda a arte e o texto pros grupos do WhatsApp do rodapé escolhido (pede confirmação antes). /sendflow mostra a configuração.
 
 No WhatsApp, os *asteriscos* viram negrito e os _sublinhados_ viram itálico quando você cola o texto.`;
@@ -293,6 +295,48 @@ async function responderComArte(original, png, destino, grupo, resposta) {
   }
   await avisarFalhaEncurtador(falhas, chat_id);
   return arte;
+}
+
+const EXEMPLO_LISTA = `Mande assim, tudo numa mensagem só (o título é opcional):
+
+/lista
+Jogos em promoção na Amazon
+
+Until Dawn 1 + 2
+PRIMEGAME5
+https://jogobara.to/4alYX
+408,40 no Pix
+429,90 em até 8x
+Frete Grátis
+
+Death Stranding 1 + 2
+https://jogobara.to/WZm23
+297,50 no Pix
+319,90 em até 6x
+
+Eu devolvo a lista formatada, do menor para o maior preço, e a arte. Sem título, eu uso "[Loja] Jogos em promoção" pela loja do primeiro link.`;
+
+// /lista: formata o rascunho, manda a lista como mensagem minha e responde a ela com a
+// arte, como uma oferta normal (os botões e a troca de capa usam essa mensagem)
+async function lista(msg) {
+  const rascunho = (msg.text || '').replace(/^\S+[ \t]*\n?/, '');
+  if (!rascunho.trim()) {
+    await tg('sendMessage', { chat_id: msg.chat.id, text: EXEMPLO_LISTA });
+    return;
+  }
+  const link = (rascunho.match(/https?:\/\/\S+|\bjogobara\.to\/\S+/i) || [])[0];
+  const l = montarLista(rascunho, { loja: await lojaDoLink(link) });
+  if (!l) {
+    await tg('sendMessage', { chat_id: msg.chat.id, text: 'Não achei nenhuma oferta. Cada oferta precisa do nome e de um link ou preço.\n\n' + EXEMPLO_LISTA });
+    return;
+  }
+  const m = await tg('sendMessage', {
+    chat_id: msg.chat.id,
+    text: l.texto.slice(0, LIMITE_TEXTO),
+    entities: l.entities.filter(e => e.offset + e.length <= LIMITE_TEXTO),
+    link_preview_options: { is_disabled: true }
+  });
+  await novaOferta({ ...m, from: msg.from });
 }
 
 // "album": as fotos mandadas junto com a oferta (veja fotoDeAlbum)
@@ -564,6 +608,8 @@ export default async function handler(req, res) {
         await tg('sendMessage', { chat_id: msg.chat.id, text: AJUDA });
       } else if (cmd === '/sendflow') {
         await statusSendflow(msg.chat.id);
+      } else if (cmd === '/lista') {
+        await lista(msg);
       } else if (cmd === '/banco') {
         await statusBanco(msg.chat.id, (msg.text || '').trim().replace(/^\S+\s*/, ''));
       } else {

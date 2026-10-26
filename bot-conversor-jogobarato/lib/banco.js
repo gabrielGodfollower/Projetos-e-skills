@@ -158,3 +158,41 @@ export async function capaDoBanco(nome, contexto) {
   const capa = await baixarDoBanco(f.id);
   return capa ? { arquivo: f.arquivo, capa } : null;
 }
+
+// Combo com "+" ("Until Dawn 1 + 2", "God of War Laufey + Ragnarök"): uma capa por jogo.
+// A parte depois do "+" costuma vir sem o começo do nome, então também tenta com as
+// primeiras palavras da primeira parte ("Until Dawn 2", "God of War Ragnarök") e fica
+// com a melhor. Devolve [{ nome, arquivo, capa }] com as achadas, na ordem do texto,
+// ou null se o nome não for um combo.
+export function partesDoCombo(nome) {
+  const limpo = nome.replace(/[*_~`]/g, '').replace(/^\s*\[[^\]]*\]\s*/, '');
+  const partes = limpo.split(/\s+\+\s+/).map(p => p.trim()).filter(Boolean);
+  return partes.length >= 2 ? partes : null;
+}
+
+export async function capasDoCombo(nome, contexto = '') {
+  const partes = partesDoCombo(nome);
+  if (!partes) return null;
+  const arquivos = await listarBanco();
+  // Começos possíveis: as palavras da primeira parte, sem o número final ("Until Dawn 1" → "Until", "Until Dawn")
+  const base = partes[0].replace(/[(\[][^()\[\]]*[)\]]/g, ' ').trim().split(/\s+/);
+  while (base.length && /^(\d+|[ivx]+)$/i.test(base[base.length - 1])) base.pop();
+  const usados = new Set();
+  const achadas = [];
+  for (const [i, parte] of partes.entries()) {
+    const tentativas = [parte];
+    if (i > 0) for (let k = 1; k <= base.length; k++) tentativas.push(base.slice(0, k).join(' ') + ' ' + parte);
+    let melhor = null;
+    for (const t of tentativas) {
+      const q = consultaDe(t, contexto);
+      const cands = buscarNoBanco(arquivos, q).filter(x => !usados.has(x.f.id));
+      const f = escolherDoBanco(q, cands);
+      if (f && (!melhor || cands[0].s > melhor.s)) melhor = { f, s: cands[0].s };
+    }
+    if (!melhor) continue;
+    usados.add(melhor.f.id);
+    const capa = await baixarDoBanco(melhor.f.id);
+    if (capa) achadas.push({ nome: parte, arquivo: melhor.f.arquivo, capa });
+  }
+  return achadas;
+}

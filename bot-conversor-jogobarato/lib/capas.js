@@ -5,7 +5,7 @@
 // No JB Indica (e sem banco) a imagem é a foto da oferta ou a do link, como antes.
 // Fotos de um álbum (duas ou mais) viram colagem nos dois modelos, no lugar do banco.
 import { gerarArte, dadosDaOferta, modeloDoGrupo } from './arte.js';
-import { bancoLigado, capaDoBanco } from './banco.js';
+import { bancoLigado, capaDoBanco, capasDoCombo } from './banco.js';
 import { produtosDoTexto, primeiraLinhaEhProduto, maisBarato } from './produtos.js';
 
 async function doBanco(nome, contexto) {
@@ -15,6 +15,19 @@ async function doBanco(nome, contexto) {
     console.error(e);
     return null;
   }
+}
+
+// Capas de um produto: um combo ("Jogo 1 + 2") pode dar uma capa por jogo; sem achar
+// as partes, procura o nome inteiro
+async function capasDoProduto(nome, contexto) {
+  try {
+    const partes = await capasDoCombo(nome, contexto);
+    if (partes && partes.length) return partes.map(p => p.capa);
+  } catch (e) {
+    console.error(e);
+  }
+  const a = await doBanco(nome, contexto);
+  return a ? [a.capa] : [];
 }
 
 // "foto": a foto que veio com a oferta (ou que a pessoa mandou respondendo à arte).
@@ -44,15 +57,15 @@ export async function arteDaOferta(texto, { grupo = 'jb', foto = null, fotos = [
   if (fotos.length) foto = fotos[0];
 
   if (banco && produtos.length >= 2) {
-    const achados = await Promise.all(produtos.map(p => doBanco(p.nome, p.bloco)));
-    const capas = achados.filter(Boolean).map(a => a.capa);
+    const achados = await Promise.all(produtos.map(p => capasDoProduto(p.nome, p.bloco)));
+    const capas = achados.flat();
     // Com menos de duas capas no banco não tem colagem: usa a foto da oferta
     if (capas.length >= 2) {
       return {
         png: await gerarArte({ ...dados, capas, modelo }),
         imagem: 'colagem',
         capas: capas.length,
-        faltam: produtos.filter((p, i) => !achados[i]).map(p => p.nome)
+        faltam: produtos.filter((p, i) => !achados[i].length).map(p => p.nome)
       };
     }
   }
@@ -60,8 +73,13 @@ export async function arteDaOferta(texto, { grupo = 'jb', foto = null, fotos = [
   let capa = foto, imagem = foto ? 'foto' : null;
   if (!capa && banco) {
     const primeira = texto.split('\n').map(l => l.trim()).find(l => /[a-zA-ZÀ-ú]{3}/.test(l)) || '';
-    const achada = await doBanco(dados.titulo || primeira, texto);
-    if (achada) { capa = achada.capa; imagem = 'banco'; }
+    const nome = dados.titulo || primeira;
+    const achadas = await capasDoProduto(nome, texto);
+    // Um combo com as capas de cada jogo vira colagem
+    if (achadas.length >= 2) {
+      return { png: await gerarArte({ ...dados, capas: achadas, modelo }), imagem: 'colagem', capas: achadas.length, faltam: [] };
+    }
+    if (achadas.length) { capa = achadas[0]; imagem = 'banco'; }
   }
   if (!capa) {
     capa = await capaDoLink();
