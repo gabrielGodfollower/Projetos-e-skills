@@ -97,6 +97,15 @@ export async function lojaDoLink(url) {
   }
 }
 
+// Oferta no estilo de outro grupo: preços com 🔥 ou 💳, ou lojas como "* KaBuM!".
+// Essas o bot formata sozinho, sem precisar do /lista
+export function estiloDeFora(texto) {
+  const linhas = texto.split('\n').map(l => l.trim());
+  const precos = linhas.filter(l => /^(🔥|💳)\s*(R\$\s*)?\d/u.test(l)).length;
+  const lojas = linhas.filter(l => /^\*\s+[^*\s][^*]*$/.test(l)).length;
+  return precos >= 1 || lojas >= 1;
+}
+
 // Links escondidos no texto (text_link do Telegram, como num "👉" com link) entram
 // no texto, para o rascunho não perder o link ao ser lido linha por linha
 export function comLinks(texto, entities = []) {

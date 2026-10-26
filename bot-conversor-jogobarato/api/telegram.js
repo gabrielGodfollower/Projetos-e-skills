@@ -15,7 +15,8 @@ import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js
 import { tg, baixarArquivo, enviarFoto, trocarFoto, linkPublicoDaFoto } from '../lib/telegram.js';
 import { dadosDaOferta, capaDoLink, modeloDoGrupo } from '../lib/arte.js';
 import { arteDaOferta } from '../lib/capas.js';
-import { montarLista, lojaDoLink, comLinks } from '../lib/lista.js';
+import { montarLista, lojaDoLink, comLinks, estiloDeFora } from '../lib/lista.js';
+import { limparLinks } from '../lib/limpeza.js';
 import { bancoLigado, listarBanco, paises, consultaDe, buscarNoBanco, escolherDoBanco } from '../lib/banco.js';
 import { encurtadorLigado, encurtar, deveEncurtar, linksEmOrdem, trocarLinks } from '../lib/encurtador.js';
 import { sendflowLigado, lancamentoDoGrupo, lancamentos, prepararEnvio, enviarProsGrupos } from '../lib/sendflow.js';
@@ -318,11 +319,25 @@ Eu devolvo a lista formatada, do menor para o maior preço, e a arte. Sem títul
 
 // /lista: formata o rascunho, manda a lista como mensagem minha e responde a ela com a
 // arte, como uma oferta normal (os botões e a troca de capa usam essa mensagem)
-async function lista(msg) {
-  const rascunho = comLinks(msg.text || '', msg.entities).replace(/^\S+[ \t]*\n?/, '');
+// "comando": false quando a oferta veio sem /lista (estilo de outro grupo)
+async function lista(msg, { comando = true } = {}) {
+  let rascunho = comLinks(msg.text || '', msg.entities);
+  if (comando) rascunho = rascunho.replace(/^\S+[ \t]*\n?/, '');
   if (!rascunho.trim()) {
     await tg('sendMessage', { chat_id: msg.chat.id, text: EXEMPLO_LISTA });
     return;
+  }
+  // Oferta de outro grupo: os links deles perdem o afiliado antes de qualquer coisa
+  const avisos = [];
+  if (estiloDeFora(rascunho)) {
+    const limpo = await limparLinks(rascunho);
+    rascunho = limpo.texto;
+    if (limpo.semComissao.length) {
+      const lojas = limpo.semComissao.filter(Boolean);
+      const nomes = lojas.length > 1 ? lojas.slice(0, -1).join(', ') + ' e ' + lojas[lojas.length - 1] : lojas[0];
+      avisos.push(`Limpei os links de outro grupo. ${lojas.length > 1 ? 'Os links de ' + nomes + ' ficaram' : 'O link de ' + nomes + ' ficou'} sem afiliado nenhum: gere o link de afiliado de vocês e troque antes de postar.`);
+    }
+    if (limpo.naoLimpos.length) avisos.push(`Não consegui chegar na loja por estes links, que ainda podem ser de outro grupo. Troque antes de postar:\n${limpo.naoLimpos.join('\n')}`);
   }
   const link = (rascunho.match(/https?:\/\/\S+|\bjogobara\.to\/\S+/i) || [])[0];
   const l = montarLista(rascunho, { loja: await lojaDoLink(link) });
@@ -338,9 +353,8 @@ async function lista(msg) {
   });
   await novaOferta({ ...m, from: msg.from });
   // Oferta copiada de outro grupo costuma perder os links (e os que vêm são dos outros)
-  if (l.semLink.length) {
-    await tg('sendMessage', { chat_id: msg.chat.id, text: `Ficou sem link: ${l.semLink.join(', ')}. Coloque os links de vocês depois do 👉 e mande de novo, ou edite antes de postar.` });
-  }
+  if (l.semLink.length) avisos.push(`Ficou sem link: ${l.semLink.join(', ')}. Coloque os links de vocês depois do 👉 e mande de novo, ou edite antes de postar.`);
+  if (avisos.length) await tg('sendMessage', { chat_id: msg.chat.id, text: avisos.join('\n\n'), link_preview_options: { is_disabled: true } });
 }
 
 // "album": as fotos mandadas junto com a oferta (veja fotoDeAlbum)
@@ -620,6 +634,7 @@ export default async function handler(req, res) {
         const respostaComFoto = msg.photo && !msg.caption && msg.reply_to_message && msg.reply_to_message.from && msg.reply_to_message.from.is_bot;
         if (msg.photo && msg.media_group_id) await fotoDeAlbum(msg);
         else if (respostaComFoto) await trocarCapa(msg);
+        else if (typeof msg.text === 'string' && estiloDeFora(msg.text)) await lista(msg, { comando: false });
         else await novaOferta(msg);
       }
     }

@@ -125,3 +125,10 @@ Mercado Livre
   assert.equal(montarLista(comLinks(t, [{ type: 'text_link', offset: t.length - 2, length: 2, url: 'https://kabum.com.br/x' }])).texto,
     'Jogos em promoção\n\nKaBuM!\n👉 https://kabum.com.br/x\n• R$ 501,36 à vista');
 });
+
+test('oferta no estilo de outro grupo é reconhecida; a do Jogo Barato não', async () => {
+  const { estiloDeFora } = await import('../lib/lista.js');
+  assert.equal(estiloDeFora('Controle\n\n* KaBuM!\n🔥 R$ 501,36 à vista\n👉 https://x.com'), true);
+  assert.equal(estiloDeFora(montarLista(RASCUNHO).texto), false);
+  assert.equal(estiloDeFora('Jogo X (PS5)\n🔥 Oferta relâmpago\nR$ 99,90 no Pix'), false);
+});
