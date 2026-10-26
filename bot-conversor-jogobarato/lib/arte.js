@@ -241,8 +241,9 @@ const naBase = (txt, { linhaDeBase, base, tam, ...estilo }) => h('div', {
 // ---------- colagem (vários produtos) ----------
 // Como no 25.html: as capas ficam entre o texto e o quadro do preço, todas com a mesma
 // altura e cada uma com a largura da sua proporção, em 1 ou 2 fileiras (a que deixar as
-// capas maiores). Aparecem até 4; com mais, a última ganha um selo "+N".
-export const COLAGEM_JB = { x: 50, y: 275, w: 1020, h: 580, maxCapas: 4, corSelo: '#0d3378' };
+// capas maiores). O HTML mostra até 4; o bot vai até 12 (listas grandes, como as de
+// outros grupos), com até 3 fileiras a partir de 5 capas. Com mais, a última ganha um selo "+N".
+export const COLAGEM_JB = { x: 50, y: 275, w: 1020, h: 580, maxCapas: 12, corSelo: '#0d3378' };
 const PROPORCAO_PS5 = 0.8; // largura ÷ altura de uma caixa de jogo de PS5
 
 // Posição de cada capa, a partir das proporções (largura ÷ altura) delas
@@ -254,7 +255,7 @@ export function slotsColagem(proporcoes, A = COLAGEM_JB) {
   const indices = proporcoes.map((_, i) => i);
   const arranjo = prop => {
     let melhor = null;
-    for (let linhas = 1; linhas <= Math.min(2, n); linhas++) {
+    for (let linhas = 1; linhas <= Math.min(n > 4 ? 3 : 2, n); linhas++) {
       const cols = Math.ceil(n / linhas);
       const grupos = [];
       for (let l = 0; l < linhas; l++) grupos.push(indices.slice(l * cols, (l + 1) * cols));
@@ -361,7 +362,7 @@ const JOGO_BARATO = {
 // ---------- modelo JB Indica ----------
 // Título centralizado, preço em preto à direita acima do produto, produto embaixo.
 // Colagem (fotos de um álbum) na mesma área do produto
-const COLAGEM_IND = { x: 200, y: 470, w: 800, h: 510, maxCapas: 4, corSelo: '#1f1d55' };
+const COLAGEM_IND = { x: 200, y: 470, w: 800, h: 510, maxCapas: 12, corSelo: '#1f1d55' };
 const JB_INDICA = {
   largura: 1200, altura: 1000, fundo: png64('fundo-jbindica.png'),
   camadas({ titulo, preco, condicao, capa, tipo, capas }) {
