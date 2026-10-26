@@ -29,7 +29,9 @@ function medir(arquivo, txt, tam) {
     sobe: Math.max(0, ...glifos.map(g => g.yMax)) * escala,
     desce: -Math.min(0, ...glifos.map(g => g.yMin)) * escala,
     // Onde a linha de base cai numa linha de altura igual ao tamanho da fonte
-    base: tam * ((1 - (f.ascender - f.descender) / f.unitsPerEm) / 2 + f.ascender / f.unitsPerEm)
+    base: tam * ((1 - (f.ascender - f.descender) / f.unitsPerEm) / 2 + f.ascender / f.unitsPerEm),
+    // Da linha de base até o meio do quadrado da fonte (o "middle" do canvas)
+    meio: tam * (f.ascender + f.descender) / (f.ascender - f.descender) / 2
   };
 }
 // Diminui a fonte até o texto caber na largura, como o HTML faz
@@ -236,11 +238,111 @@ const naBase = (txt, { linhaDeBase, base, tam, ...estilo }) => h('div', {
   position: 'absolute', top: linhaDeBase - base, fontSize: tam, lineHeight: 1, whiteSpace: 'nowrap', ...estilo
 }, txt);
 
+// ---------- colagem (vários produtos) ----------
+// Como no 25.html: as capas ficam entre o texto e o quadro do preço, todas com a mesma
+// altura e cada uma com a largura da sua proporção, em 1 ou 2 fileiras (a que deixar as
+// capas maiores). Aparecem até 4; com mais, a última ganha um selo "+N".
+export const COLAGEM_JB = { x: 50, y: 275, w: 1020, h: 580, maxCapas: 4, corSelo: '#0d3378' };
+const PROPORCAO_PS5 = 0.8; // largura ÷ altura de uma caixa de jogo de PS5
+
+// Posição de cada capa, a partir das proporções (largura ÷ altura) delas
+export function slotsColagem(proporcoes, A = COLAGEM_JB) {
+  const n = proporcoes.length;
+  if (!n) return [];
+  // Espaço entre as capas (um pouco maior quando são só duas)
+  const gap = n === 2 ? 48 : 28;
+  const indices = proporcoes.map((_, i) => i);
+  const arranjo = prop => {
+    let melhor = null;
+    for (let linhas = 1; linhas <= Math.min(2, n); linhas++) {
+      const cols = Math.ceil(n / linhas);
+      const grupos = [];
+      for (let l = 0; l < linhas; l++) grupos.push(indices.slice(l * cols, (l + 1) * cols));
+      let h = (A.h - gap * (linhas - 1)) / linhas;
+      for (const g of grupos) h = Math.min(h, (A.w - gap * (g.length - 1)) / g.reduce((t, i) => t + prop(i), 0));
+      if (!melhor || h > melhor.h * 1.02) melhor = { linhas, grupos, h };
+    }
+    return melhor;
+  };
+  const melhor = arranjo(i => proporcoes[i]);
+  const { linhas, grupos } = melhor;
+  let h = melhor.h;
+  // Três capas: no máximo a altura de três caixas de PS5 lado a lado, para caixas
+  // estreitas (Switch) não ficarem maiores que o normal. Duas: 80% do máximo
+  if (n === 3) h = Math.min(h, arranjo(() => PROPORCAO_PS5).h);
+  if (n === 2) h = Math.min(h, arranjo(() => PROPORCAO_PS5).h) * 0.8;
+  const topo = A.y + A.h / 2 - (linhas * h + (linhas - 1) * gap) / 2;
+  const slots = [];
+  grupos.forEach((g, l) => {
+    let x = A.x + A.w / 2 - (g.reduce((t, i) => t + h * proporcoes[i], 0) + gap * (g.length - 1)) / 2;
+    for (const i of g) {
+      const w = h * proporcoes[i];
+      slots.push({ x, y: topo + l * (h + gap), w, h });
+      x += w + gap;
+    }
+  });
+  return slots;
+}
+
+// Corta a margem branca (ou transparente) em volta da capa, como o 25.html, para as
+// capas ficarem comparáveis. Devolve a capa em PNG com as medidas, ou null se não abrir
+export function semBordaBranca(buf) {
+  const tipo = tipoImagem(buf), t = tamanhoImagem(buf);
+  if (!tipo || !t || !t.w || !t.h) return null;
+  const href = `data:${tipo};base64,${buf.toString('base64')}`;
+  const svg = (w, h2, caixa) => `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h2}" viewBox="${caixa}">`
+    + `<image href="${href}" width="${t.w}" height="${t.h}" preserveAspectRatio="none"/></svg>`;
+  // Procura a margem numa cópia pequena (até 320 px), como o HTML
+  const k = Math.min(1, 320 / Math.max(t.w, t.h));
+  const mini = new Resvg(svg(Math.max(1, Math.round(t.w * k)), Math.max(1, Math.round(t.h * k)), `0 0 ${t.w} ${t.h}`)).render();
+  const d = mini.pixels;
+  let x0 = mini.width, y0 = mini.height, x1 = -1, y1 = -1;
+  for (let y = 0; y < mini.height; y++) {
+    for (let x = 0; x < mini.width; x++) {
+      const o = (y * mini.width + x) * 4;
+      if (d[o + 3] < 16 || (d[o] > 240 && d[o + 1] > 240 && d[o + 2] > 240)) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (y < y0) y0 = y;
+      if (y > y1) y1 = y;
+    }
+  }
+  if (x1 < x0 || y1 < y0) return { capa: buf, w: t.w, h: t.h };
+  const kx = mini.width / t.w, ky = mini.height / t.h;
+  const sx = Math.max(0, Math.floor(x0 / kx) - 1), sy = Math.max(0, Math.floor(y0 / ky) - 1);
+  const sw = Math.min(t.w, Math.ceil((x1 + 1) / kx) + 1) - sx, sh = Math.min(t.h, Math.ceil((y1 + 1) / ky) + 1) - sy;
+  if (sw >= t.w * 0.98 && sh >= t.h * 0.98) return { capa: buf, w: t.w, h: t.h };
+  return { capa: new Resvg(svg(sw, sh, `${sx} ${sy} ${sw} ${sh}`)).render().asPng(), w: sw, h: sh };
+}
+
+function camadasDaColagem(capas, A = COLAGEM_JB) {
+  const visiveis = capas.slice(0, A.maxCapas);
+  const extra = capas.length - visiveis.length;
+  const slots = slotsColagem(visiveis.map(c => c.w / c.h), A);
+  const c = slots.map((s, i) => ({
+    type: 'img',
+    props: { src: 'data:image/png;base64,' + visiveis[i].capa.toString('base64'), width: s.w, height: s.h, style: { position: 'absolute', left: s.x, top: s.y, width: s.w, height: s.h } }
+  }));
+  if (extra > 0) {
+    // Selo "+N" no canto da última capa. O HTML pede Teko 600, que não existe: o navegador
+    // engrossa a 500, e o contorno branco de 1 px faz o mesmo aqui
+    const u = slots[slots.length - 1], r = 44, x = u.x + u.w - r + 10, y = u.y + r - 10;
+    const txt = '+' + extra, m = medir('teko-500.ttf', txt, 34);
+    c.push(h('div', { position: 'absolute', left: x - r, top: y - r, width: 2 * r, height: 2 * r, borderRadius: r, background: A.corSelo }));
+    c.push(naBase(txt, {
+      left: x - m.largura / 2, color: '#fff', fontFamily: 'Teko', fontWeight: 500, tam: 34, WebkitTextStroke: '1.1px #fff',
+      linhaDeBase: y + 2 + m.meio, base: m.base
+    }));
+  }
+  return c;
+}
+
 const JOGO_BARATO = {
   largura: LARGURA_JB, altura: 1000, fundo: png64('fundo-arte.png'),
-  camadas({ titulo, preco, condicao, capa, tipo }) {
+  camadas({ titulo, preco, condicao, capa, tipo, capas }) {
     const c = [];
-    if (tipo) c.push(capaImg(capa, tipo, areaDoProduto(tamanhoImagem(capa))));
+    if (capas && capas.length) c.push(...camadasDaColagem(capas));
+    else if (tipo) c.push(capaImg(capa, tipo, areaDoProduto(tamanhoImagem(capa))));
     if (titulo) {
       const T = LAYOUT_JB.titulo, tam = tamanhoQueCabe(T.fonte, titulo, T.tam, T.larguraMax);
       c.push(naBase(titulo, { left: T.x, color: T.cor, fontFamily: 'Baloo', fontWeight: 500, tam, linhaDeBase: T.base, base: medir(T.fonte, titulo, tam).base }));
@@ -280,12 +382,14 @@ const JB_INDICA = {
 
 const MODELOS = { jb: JOGO_BARATO, ind: JB_INDICA };
 
-export async function gerarArte({ titulo, preco, condicao = 'à vista', capa, modelo = 'jb' }) {
+// "capas" (várias, só no modelo Jogo Barato) monta a colagem no lugar da capa única
+export async function gerarArte({ titulo, preco, condicao = 'à vista', capa, capas, modelo = 'jb' }) {
   const m = MODELOS[modelo] || JOGO_BARATO;
   const tipo = capa && tipoImagem(capa);
+  const recortadas = capas && capas.map(semBordaBranca).filter(Boolean);
   const filhos = [
     { type: 'img', props: { src: m.fundo, width: m.largura, height: m.altura, style: { position: 'absolute', left: 0, top: 0 } } },
-    ...m.camadas({ titulo, preco, condicao, capa, tipo })
+    ...m.camadas({ titulo, preco, condicao, capa, tipo, capas: recortadas })
   ];
   const svg = await satori(
     h('div', { position: 'relative', width: m.largura, height: m.altura, background: '#fff' }, filhos),

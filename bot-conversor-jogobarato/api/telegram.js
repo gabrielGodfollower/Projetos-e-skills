@@ -6,11 +6,15 @@
 // 3. Ao tocar num botão, o bot relê a mensagem original (a que ele respondeu)
 //    e edita a resposta. Assim nada precisa ser guardado em banco de dados.
 // 4. Respondendo à arte com outra foto, o bot troca a capa.
+//    Com o banco de capas ligado, a capa vem do Google Drive pelo nome do jogo, e
+//    oferta com vários jogos vira colagem (lib/capas.js).
 // 5. Links de lojas viram links jogobara.to (YOURLS), se YOURLS_SIGNATURE estiver configurado.
 // 6. Com o SendFlow configurado, o botão "Enviar nos grupos" manda a oferta pro WhatsApp.
 import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js';
 import { tg, baixarArquivo, enviarFoto, trocarFoto, linkPublicoDaFoto } from '../lib/telegram.js';
-import { gerarArte, dadosDaOferta, capaDoLink, modeloDoGrupo } from '../lib/arte.js';
+import { dadosDaOferta, capaDoLink, modeloDoGrupo } from '../lib/arte.js';
+import { arteDaOferta } from '../lib/capas.js';
+import { bancoLigado, listarBanco, paises, consultaDe, buscarNoBanco, escolherDoBanco } from '../lib/banco.js';
 import { encurtadorLigado, encurtar, deveEncurtar, linksEmOrdem, trocarLinks } from '../lib/encurtador.js';
 import { sendflowLigado, lancamentoDoGrupo, lancamentos, prepararEnvio, enviarProsGrupos } from '../lib/sendflow.js';
 
@@ -26,6 +30,7 @@ Como usar:
 • Os botões trocam o rodapé (${GRUPOS.jb.nome}, ${GRUPOS.ind.nome} ou sem rodapé) e o destino.
 • Em "Para Telegram" a legenda vira a oferta formatada, pronta para encaminhar no grupo.
 • Pra trocar a capa, responda à arte com outra foto.
+• Com o banco de capas ligado, eu acho a capa do jogo no Google Drive pelo nome, e oferta com vários jogos vira colagem. /banco mostra a configuração e "/banco nome do jogo" mostra o que eu acho.
 • Com o SendFlow ligado, o botão 📲 manda a arte e o texto pros grupos do WhatsApp do rodapé escolhido (pede confirmação antes). /sendflow mostra a configuração.
 
 No WhatsApp, os *asteriscos* viram negrito e os _sublinhados_ viram itálico quando você cola o texto.`;
@@ -140,33 +145,52 @@ async function avisarFalhaEncurtador(falhas, chatId) {
   if (falhas.length) await tg('sendMessage', { chat_id: chatId, text: `Não consegui encurtar um dos links no jogobara.to, então ele ficou original.\nMotivo: ${falhas[0]}` });
 }
 
-// Capa do jogo: a foto da própria oferta ou, se não tiver, a imagem da página do link
-async function capaDaOferta(msg, texto, entities) {
-  if (msg.photo && msg.photo.length) {
-    try { return await baixarArquivo(msg.photo[msg.photo.length - 1].file_id); } catch (e) { console.error(e); }
-  }
-  const links = [];
-  if (msg.link_preview_options && msg.link_preview_options.url) links.push(msg.link_preview_options.url);
-  for (const e of entities) {
-    if (e.type === 'text_link') links.push(e.url);
-    if (e.type === 'url') links.push(texto.slice(e.offset, e.offset + e.length));
-  }
-  links.push(...(texto.match(/https?:\/\/\S+/g) || []));
-  for (const url of [...new Set(links)].slice(0, 2)) {
-    const capa = await capaDoLink(url);
-    if (capa) return capa;
-  }
-  return null;
-}
-
-// O modelo da arte acompanha o rodapé: JB Indica tem arte própria
-async function tentarArte(texto, capa, grupo) {
+// A foto que veio com a oferta
+async function fotoDaOferta(msg) {
+  if (!msg.photo || !msg.photo.length) return null;
   try {
-    return await gerarArte({ ...dadosDaOferta(texto), capa, modelo: modeloDoGrupo(grupo) });
+    return await baixarArquivo(msg.photo[msg.photo.length - 1].file_id);
   } catch (e) {
     console.error(e);
     return null;
   }
+}
+
+// A imagem da página do link, procurada só se a arte precisar
+function capaPeloLink(msg, texto, entities) {
+  return async () => {
+    const links = [];
+    if (msg.link_preview_options && msg.link_preview_options.url) links.push(msg.link_preview_options.url);
+    for (const e of entities) {
+      if (e.type === 'text_link') links.push(e.url);
+      if (e.type === 'url') links.push(texto.slice(e.offset, e.offset + e.length));
+    }
+    links.push(...(texto.match(/https?:\/\/\S+/g) || []));
+    for (const url of [...new Set(links)].slice(0, 2)) {
+      const capa = await capaDoLink(url);
+      if (capa) return capa;
+    }
+    return null;
+  };
+}
+
+// Arte da oferta: colagem, foto da oferta, capa do banco ou imagem do link (veja
+// lib/capas.js). O modelo acompanha o rodapé: JB Indica tem arte própria
+async function tentarArte(msg, texto, entities, grupo, opcoes = {}) {
+  try {
+    return await arteDaOferta(texto, { grupo, foto: await fotoDaOferta(msg), capaDoLink: capaPeloLink(msg, texto, entities), ...opcoes });
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+// Colagem: avisa quais jogos ficaram sem capa e que a foto da oferta ficou de fora
+async function avisarColagem(msg, arte) {
+  const partes = [];
+  if (arte.faltam.length) partes.push(`Não achei no banco a capa de: ${arte.faltam.join('; ')}. A colagem saiu só com as ${arte.capas} que achei.`);
+  if (msg.photo) partes.push('A arte usa as capas do banco. Pra usar a sua foto no lugar da colagem, responda à arte com ela.');
+  if (partes.length) await tg('sendMessage', { chat_id: msg.chat.id, text: partes.join('\n\n') });
 }
 
 // A capa ocupa ~530 px de altura na arte; abaixo disso a foto fica borrada
@@ -201,13 +225,13 @@ async function novaOferta(msg) {
   const destino = sentidoPadrao(c.texto, c.entities);
   const grupo = 'jb';
 
-  // Já responde com a arte quando tem capa (foto da oferta ou imagem do link)
+  // Já responde com a arte quando acha imagem (colagem, foto da oferta, banco ou link)
   if (!msg.video && !msg.animation && !msg.document) {
-    const capa = await capaDaOferta(msg, c.texto, c.entities);
-    const png = capa && await tentarArte(c.texto, capa, grupo);
-    if (png) {
-      await responderComArte(msg, png, destino, grupo);
-      await avisarFotoPequena(msg, msg.chat.id);
+    const arte = await tentarArte(msg, c.texto, c.entities, grupo);
+    if (arte && arte.png) {
+      await responderComArte(msg, arte.png, destino, grupo);
+      if (arte.imagem === 'colagem') await avisarColagem(msg, arte);
+      if (arte.imagem === 'foto') await avisarFotoPequena(msg, msg.chat.id);
       return;
     }
   }
@@ -233,13 +257,13 @@ async function novaOferta(msg) {
 async function arte(cb, original, destino, grupo) {
   await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Gerando a arte...' });
   const c = conteudo(original);
-  const capa = await capaDaOferta(original, c.texto, c.entities);
-  const png = await tentarArte(c.texto, capa, grupo);
-  if (!png) {
+  const arte = await tentarArte(original, c.texto, c.entities, grupo, { semImagem: true });
+  if (!arte || !arte.png) {
     await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não consegui gerar a arte dessa oferta.' });
     return;
   }
-  await responderComArte(original, png, destino, grupo, cb.message);
+  await responderComArte(original, arte.png, destino, grupo, cb.message);
+  if (arte.imagem === 'colagem') await avisarColagem(original, arte);
 }
 
 // Você respondeu a uma mensagem do bot com uma foto: refaz a arte com essa foto como capa
@@ -251,9 +275,11 @@ async function trocarCapa(msg) {
     return;
   }
   const entities = (typeof base.caption === 'string' ? base.caption_entities : base.entities) || [];
-  const capa = await baixarArquivo(msg.photo[msg.photo.length - 1].file_id);
-  // A legenda do bot pode ter *negrito* de WhatsApp; tira as marcas pra ler nome e preço
-  const png = await tentarArte(semRodape(legenda).texto.replace(/[*_~]/g, ''), capa, grupoMarcado(base.reply_markup));
+  // A legenda do bot pode ter *negrito* de WhatsApp; tira as marcas pra ler nome e preço.
+  // A foto que a pessoa mandou é a imagem da arte (sem banco nem colagem)
+  const texto = semRodape(legenda).texto.replace(/[*_~]/g, '');
+  const arte = await tentarArte(msg, texto, [], grupoMarcado(base.reply_markup), { soFoto: true, semImagem: true });
+  const png = arte && arte.png;
   if (!png) {
     await tg('sendMessage', { chat_id: msg.chat.id, text: 'Não consegui gerar a arte com essa foto.' });
     return;
@@ -355,6 +381,33 @@ async function statusSendflow(chatId) {
   await tg('sendMessage', { chat_id: chatId, text: linhas.join('\n') });
 }
 
+// /banco: confere a configuração do banco de capas e atualiza a lista da pasta.
+// "/banco nome do jogo" mostra as capas que combinam, com ✅ na que a arte usaria
+async function statusBanco(chatId, busca) {
+  const ok = v => (v ? '✅' : '❌');
+  const linhas = [
+    'Banco de capas (Google Drive)',
+    `${ok(process.env.BANCO_DRIVE_PASTA)} Pasta (BANCO_DRIVE_PASTA)`,
+    `${ok(process.env.BANCO_DRIVE_CHAVE)} Chave da API do Google (BANCO_DRIVE_CHAVE)`
+  ];
+  if (bancoLigado()) {
+    try {
+      const arquivos = await listarBanco({ atualizar: !busca });
+      linhas.push('', `${arquivos.length} imagens no banco. Ordem dos países: ${paises().join(', ')}.`);
+      if (busca) {
+        const q = consultaDe(busca, busca);
+        const cands = buscarNoBanco(arquivos, q);
+        const f = escolherDoBanco(q, cands);
+        linhas.push('', cands.length ? `Para "${busca}":` : `Nada no banco para "${busca}".`);
+        for (const x of cands.slice(0, 8)) linhas.push(`${x.f === f ? '✅' : '•'} ${x.f.arquivo}`);
+      }
+    } catch (e) {
+      linhas.push('', 'Não consegui ler o banco.', 'Motivo: ' + e.message);
+    }
+  }
+  await tg('sendMessage', { chat_id: chatId, text: linhas.join('\n') });
+}
+
 async function botao(cb, host) {
   const partes = (cb.data || '').split('|');
   const ehArte = partes[0] === 'arte';
@@ -375,10 +428,9 @@ async function botao(cb, host) {
   if (resposta.photo && modeloDoGrupo(grupoMarcado(resposta.reply_markup)) !== modeloDoGrupo(grupo) && saida.length <= LIMITE_LEGENDA) {
     await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Trocando a arte...' });
     const c = conteudo(original);
-    const capa = await capaDaOferta(original, c.texto, c.entities);
-    const png = await tentarArte(c.texto, capa, grupo);
-    if (png) {
-      await trocarFoto({ chat_id: comum.chat_id, message_id: comum.message_id, caption: saida, parse_mode, reply_markup: comum.reply_markup }, png);
+    const arte = await tentarArte(original, c.texto, c.entities, grupo, { semImagem: true });
+    if (arte && arte.png) {
+      await trocarFoto({ chat_id: comum.chat_id, message_id: comum.message_id, caption: saida, parse_mode, reply_markup: comum.reply_markup }, arte.png);
       return;
     }
   }
@@ -419,6 +471,8 @@ export default async function handler(req, res) {
         await tg('sendMessage', { chat_id: msg.chat.id, text: AJUDA });
       } else if (cmd === '/sendflow') {
         await statusSendflow(msg.chat.id);
+      } else if (cmd === '/banco') {
+        await statusBanco(msg.chat.id, (msg.text || '').trim().replace(/^\S+\s*/, ''));
       } else {
         const respostaComFoto = msg.photo && !msg.caption && msg.reply_to_message && msg.reply_to_message.from && msg.reply_to_message.from.is_bot;
         if (respostaComFoto) await trocarCapa(msg);
