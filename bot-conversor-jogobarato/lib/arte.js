@@ -285,7 +285,8 @@ export function slotsColagem(proporcoes, A = COLAGEM_JB) {
 }
 
 // Corta a margem branca (ou transparente) em volta da capa, como o 25.html, para as
-// capas ficarem comparáveis. Devolve a capa em PNG com as medidas, ou null se não abrir
+// capas ficarem comparáveis. Devolve a capa (o tipo dela muda para PNG quando é cortada)
+// com as medidas, ou null se não abrir
 export function semBordaBranca(buf) {
   const tipo = tipoImagem(buf), t = tamanhoImagem(buf);
   if (!tipo || !t || !t.w || !t.h) return null;
@@ -307,12 +308,13 @@ export function semBordaBranca(buf) {
       if (y > y1) y1 = y;
     }
   }
-  if (x1 < x0 || y1 < y0) return { capa: buf, w: t.w, h: t.h };
+  const inteira = { capa: buf, tipo, w: t.w, h: t.h };
+  if (x1 < x0 || y1 < y0) return inteira;
   const kx = mini.width / t.w, ky = mini.height / t.h;
   const sx = Math.max(0, Math.floor(x0 / kx) - 1), sy = Math.max(0, Math.floor(y0 / ky) - 1);
   const sw = Math.min(t.w, Math.ceil((x1 + 1) / kx) + 1) - sx, sh = Math.min(t.h, Math.ceil((y1 + 1) / ky) + 1) - sy;
-  if (sw >= t.w * 0.98 && sh >= t.h * 0.98) return { capa: buf, w: t.w, h: t.h };
-  return { capa: new Resvg(svg(sw, sh, `${sx} ${sy} ${sw} ${sh}`)).render().asPng(), w: sw, h: sh };
+  if (sw >= t.w * 0.98 && sh >= t.h * 0.98) return inteira;
+  return { capa: new Resvg(svg(sw, sh, `${sx} ${sy} ${sw} ${sh}`)).render().asPng(), tipo: 'image/png', w: sw, h: sh };
 }
 
 function camadasDaColagem(capas, A = COLAGEM_JB) {
@@ -321,7 +323,7 @@ function camadasDaColagem(capas, A = COLAGEM_JB) {
   const slots = slotsColagem(visiveis.map(c => c.w / c.h), A);
   const c = slots.map((s, i) => ({
     type: 'img',
-    props: { src: 'data:image/png;base64,' + visiveis[i].capa.toString('base64'), width: s.w, height: s.h, style: { position: 'absolute', left: s.x, top: s.y, width: s.w, height: s.h } }
+    props: { src: `data:${visiveis[i].tipo};base64,${visiveis[i].capa.toString('base64')}`, width: s.w, height: s.h, style: { position: 'absolute', left: s.x, top: s.y, width: s.w, height: s.h } }
   }));
   if (extra > 0) {
     // Selo "+N" no canto da última capa. O HTML pede Teko 600, que não existe: o navegador

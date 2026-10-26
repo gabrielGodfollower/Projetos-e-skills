@@ -159,3 +159,15 @@ test('fotos de um álbum valem mais que o banco e viram colagem', async () => {
   assert.equal(arte.capas, 2);
   assert.equal((await arteDaOferta(OFERTA, { grupo: 'ind', fotos: [a, a, a] })).imagem, 'album');
 });
+
+test('colagem desenha foto JPEG sem margem (foto do Telegram)', async () => {
+  const { gerarArte } = await import('../lib/arte.js');
+  // Capa vermelha de 78x100 em JPEG, sem margem branca: entra como está, sem virar PNG
+  const jpeg = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABkAE4DASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDySiiivmD9yCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigD/2Q==', 'base64');
+  assert.equal(semBordaBranca(jpeg).tipo, 'image/jpeg');
+  const arte = await gerarArte({ titulo: 'Lista', preco: '219,91', condicao: 'à vista', capas: [jpeg, jpeg, jpeg] });
+  // Pixel no meio da capa do meio
+  const r = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1000"><image href="data:image/png;base64,${arte.toString('base64')}" width="1200" height="1000"/></svg>`).render();
+  const o = (565 * 1200 + 600) * 4;
+  assert.ok(r.pixels[o] > 150 && r.pixels[o + 1] < 60, `pixel ${[...r.pixels.subarray(o, o + 3)]}`);
+});
