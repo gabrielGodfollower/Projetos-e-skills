@@ -139,4 +139,6 @@ test('título de pré-venda no padrão do Jogo Barato', async () => {
   assert.equal(preVenda('[Pré-venda Global] Edição de Colecionador de Zelda'), 'Pré-venda Global da Edição de Colecionador de Zelda!');
   assert.equal(preVenda('Pré-venda do Dualsense Edição Limitada!'), 'Pré-venda do Dualsense Edição Limitada!');
   assert.equal(preVenda('Jogos em promoção'), 'Jogos em promoção');
+  // Acento separado e hífen diferente, como vem de cópia
+  assert.equal(preVenda('(Pre\u0301\u2011venda) Controle \u2013 Edição'), 'Pré-venda do Controle Edição!');
 });

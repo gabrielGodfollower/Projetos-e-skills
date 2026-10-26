@@ -21,9 +21,11 @@ const VALOR = /^(?:R\$\s*)?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?(?![\d.,])\s*
 // "(Pré-venda) Controle DualSense – Edição Limitada" → "Pré-venda do Controle DualSense Edição Limitada!"
 const FEMININOS = /^(edi[cç][aã]o|cole[cç][aã]o|vers[aã]o|caixa|cadeira|mesa|tv|smart\s?tv|c[aâ]mera|placa|mem[oó]ria|mochila|camiseta|bolsa|capa|base|esta[cç][aã]o|central|headset)\b/i;
 export function preVenda(t) {
-  const m = t.match(/^\s*[(\[]?\s*pr[eé][\s-]?venda(\s+global)?\s*[)\]]?\s*[-–—:|]?\s*(.+)$/i);
+  // Texto copiado pode vir com acento separado ou hífen diferente (‐ ‑ –)
+  t = t.normalize('NFC');
+  const m = t.match(/^\s*[(\[]?\s*pr[eé][\s\-‐‑–—]?venda(\s+global)?\s*[)\]]?\s*[-‐‑–—:|]?\s*(.+)$/i);
   if (!m) return t;
-  let resto = m[2].replace(/\s+[-–—|]\s+/g, ' ').replace(/[.!]+$/, '').trim();
+  let resto = m[2].replace(/\s+[-‐‑–—|]\s+/g, ' ').replace(/[.!]+$/, '').trim();
   if (!/^(d[aoe]s?|n[ao]s?|em|para|pra|com)\s/i.test(resto)) resto = (FEMININOS.test(resto) ? 'da ' : 'do ') + resto;
   return `Pré-venda${m[1] ? ' Global' : ''} ${resto}!`;
 }
