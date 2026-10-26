@@ -75,3 +75,53 @@ test('combo com "+" vira uma capa por jogo', async () => {
     delete process.env.BANCO_DRIVE_CHAVE;
   }
 });
+
+test('/lista: oferta copiada de outro grupo vira o padrão daqui', async () => {
+  const { comLinks } = await import('../lib/lista.js');
+  const copiada = `(Pré-venda) Controle sem fio DualSense – Edição Limitada Gran Turismo
+
+* KaBuM!
+🔥 R$ 501,36 à vista
+💳 R$ 539,10 em até 10x
+🎟️ Cupom: RACERVIP
+👉
+📦 Exclusivo para VIP Prime Ninja
+
+* Amazon
+🔥 R$ 599,90 em até 10x
+🔥 R$ 557,90 no Pix
+👉
+
+* Mercado Livre
+🔥 R$ 557,90 no Pix
+🔥 R$ 599,90 em até 10x  (ou em 15x no cartão Mercado Pago)
+👉 https://jogobara.to/ML1
+
+Canais de Promoções do Outro Grupo
+👉 https://exemplo.com/redes`;
+  const l = montarLista(copiada);
+  assert.equal(l.texto, `(Pré-venda) Controle sem fio DualSense – Edição Limitada Gran Turismo
+
+KaBuM!
+🎟 Cupom: RACERVIP
+👉
+• R$ 501,36 à vista
+• R$ 539,10 em até 10x
+• Exclusivo para VIP Prime Ninja
+
+Amazon
+👉
+• R$ 599,90 em até 10x
+• R$ 557,90 no Pix
+
+Mercado Livre
+👉 https://jogobara.to/ML1
+• R$ 557,90 no Pix
+• R$ 599,90 em até 10x (ou em 15x no cartão Mercado Pago)`);
+  assert.deepEqual(l.semLink, ['KaBuM!', 'Amazon']);
+  // Link escondido no "👉" (copiado dentro do Telegram) entra no texto
+  const t = 'KaBuM!\n🔥 R$ 501,36 à vista\n👉';
+  assert.equal(comLinks(t, [{ type: 'text_link', offset: t.length - 2, length: 2, url: 'https://kabum.com.br/x' }]), t + ' https://kabum.com.br/x');
+  assert.equal(montarLista(comLinks(t, [{ type: 'text_link', offset: t.length - 2, length: 2, url: 'https://kabum.com.br/x' }])).texto,
+    'Jogos em promoção\n\nKaBuM!\n👉 https://kabum.com.br/x\n• R$ 501,36 à vista');
+});

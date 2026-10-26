@@ -15,7 +15,7 @@ import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js
 import { tg, baixarArquivo, enviarFoto, trocarFoto, linkPublicoDaFoto } from '../lib/telegram.js';
 import { dadosDaOferta, capaDoLink, modeloDoGrupo } from '../lib/arte.js';
 import { arteDaOferta } from '../lib/capas.js';
-import { montarLista, lojaDoLink } from '../lib/lista.js';
+import { montarLista, lojaDoLink, comLinks } from '../lib/lista.js';
 import { bancoLigado, listarBanco, paises, consultaDe, buscarNoBanco, escolherDoBanco } from '../lib/banco.js';
 import { encurtadorLigado, encurtar, deveEncurtar, linksEmOrdem, trocarLinks } from '../lib/encurtador.js';
 import { sendflowLigado, lancamentoDoGrupo, lancamentos, prepararEnvio, enviarProsGrupos } from '../lib/sendflow.js';
@@ -33,7 +33,7 @@ Como usar:
 • Em "Para Telegram" a legenda vira a oferta formatada, pronta para encaminhar no grupo.
 • Pra trocar a capa, responda à arte com outra foto. Mandando várias fotos de uma vez (álbum), com a oferta ou respondendo à arte, a arte vira uma colagem com todas.
 • Com o banco de capas ligado, eu acho a capa do jogo no Google Drive pelo nome, e oferta com vários jogos vira colagem. /banco mostra a configuração e "/banco nome do jogo" mostra o que eu acho.
-• /lista monta uma lista de várias ofertas: mande /lista na primeira linha e, embaixo, cada oferta separada por uma linha em branco (nome, cupom, link, preços e "Frete Grátis", em qualquer ordem). Eu coloco os emojis, ordeno do menor para o maior preço e faço a arte. Mande /lista sozinho para ver um exemplo.
+• /lista monta uma lista de várias ofertas: mande /lista na primeira linha e, embaixo, cada oferta separada por uma linha em branco (nome, cupom, link, preços e "Frete Grátis", em qualquer ordem). Eu coloco os emojis, ordeno do menor para o maior preço e faço a arte. Serve também para colar uma oferta copiada de outro grupo, que sai no padrão do Jogo Barato. Mande /lista sozinho para ver um exemplo.
 • Com o SendFlow ligado, o botão 📲 manda a arte e o texto pros grupos do WhatsApp do rodapé escolhido (pede confirmação antes). /sendflow mostra a configuração.
 
 No WhatsApp, os *asteriscos* viram negrito e os _sublinhados_ viram itálico quando você cola o texto.`;
@@ -319,7 +319,7 @@ Eu devolvo a lista formatada, do menor para o maior preço, e a arte. Sem títul
 // /lista: formata o rascunho, manda a lista como mensagem minha e responde a ela com a
 // arte, como uma oferta normal (os botões e a troca de capa usam essa mensagem)
 async function lista(msg) {
-  const rascunho = (msg.text || '').replace(/^\S+[ \t]*\n?/, '');
+  const rascunho = comLinks(msg.text || '', msg.entities).replace(/^\S+[ \t]*\n?/, '');
   if (!rascunho.trim()) {
     await tg('sendMessage', { chat_id: msg.chat.id, text: EXEMPLO_LISTA });
     return;
@@ -337,6 +337,10 @@ async function lista(msg) {
     link_preview_options: { is_disabled: true }
   });
   await novaOferta({ ...m, from: msg.from });
+  // Oferta copiada de outro grupo costuma perder os links (e os que vêm são dos outros)
+  if (l.semLink.length) {
+    await tg('sendMessage', { chat_id: msg.chat.id, text: `Ficou sem link: ${l.semLink.join(', ')}. Coloque os links de vocês depois do 👉 e mande de novo, ou edite antes de postar.` });
+  }
 }
 
 // "album": as fotos mandadas junto com a oferta (veja fotoDeAlbum)

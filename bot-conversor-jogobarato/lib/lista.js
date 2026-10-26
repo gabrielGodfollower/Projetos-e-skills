@@ -11,6 +11,8 @@
 // vira "*Until Dawn 1 + 2*", "🎟 Cupom: PRIMEGAME5", "👉 link", "• R$ 408,40 no Pix"...
 // As ofertas saem do menor para o maior preço. Um bloco sem link e sem preço no começo
 // é o título; sem título, o bot monta "[Loja] Jogos em promoção" pela loja do link.
+// Também serve para uma oferta copiada de outro grupo (🔥 R$ 501,36 à vista, 💳 ...,
+// "* KaBuM!" como nome de cada loja): os emojis dos outros saem e entra o padrão daqui.
 
 const LINK = /(https?:\/\/\S+|\b(?:www\.|jogobara\.to\/)\S+)/i;
 const VALOR = /^(?:R\$\s*)?(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?(?![\d.,])\s*(.*)$/i;
@@ -24,23 +26,33 @@ function reais(inteiro, centavos) {
 }
 
 // "no pix", "pix", "à vista", "8x", "em até 8x", "10x sem juros"
+// Um complemento entre parênteses fica: "(ou em 15x no cartão Mercado Pago)"
 function condicao(resto) {
-  const t = resto.trim();
-  if (!t) return '';
-  if (/pix/i.test(t)) return 'no Pix';
-  if (/[àa]\s*vista/i.test(t)) return 'à vista';
-  const x = t.match(/(\d+)\s*x/i);
-  if (x) return `em até ${x[1]}x` + (/sem juros/i.test(t) ? ' sem juros' : '');
-  return t;
+  const extra = (resto.match(/\([^)]*\)/) || [''])[0];
+  const t = resto.replace(extra, ' ').trim();
+  let c = t;
+  if (!t) c = '';
+  else if (/pix/i.test(t)) c = 'no Pix';
+  else if (/[àa]\s*vista/i.test(t)) c = 'à vista';
+  else {
+    const x = t.match(/(\d+)\s*x/i);
+    if (x) c = `em até ${x[1]}x` + (/sem juros/i.test(t) ? ' sem juros' : '');
+  }
+  return [c, extra].filter(Boolean).join(' ');
 }
 
 function lerBloco(bloco) {
-  const o = { nome: '', cupom: '', link: '', precos: [], frete: false, outras: [] };
+  const o = { nome: '', cupom: '', link: '', precos: [], frete: false, outras: [], setaSemLink: false };
   for (const bruta of bloco.split('\n')) {
-    const l = limpar(bruta);
-    if (!l) continue;
+    let l = limpar(bruta);
+    // "👉" sozinho: o link se perdeu ao copiar a oferta de outro grupo
+    if (!l) { if (/👉/.test(bruta)) o.setaSemLink = true; continue; }
     const link = l.match(LINK);
-    if (link && l.replace(link[0], '').replace(/link:?/i, '').trim().length < 3) { o.link = o.link || link[0]; continue; }
+    if (link) {
+      o.link = o.link || link[0];
+      l = l.replace(link[0], ' ').replace(/link:?/i, ' ').replace(/\s+/g, ' ').replace(/[\s:–—-]+$/, '').trim();
+      if (l.length < 3) continue;
+    }
     // Vários preços na mesma linha: "408,40 pix / 429,90 8x"
     const partes = l.split(/\s*[/|]\s*/);
     const valores = partes.map(p => p.match(VALOR)).filter(Boolean);
@@ -51,7 +63,7 @@ function lerBloco(bloco) {
       }
       continue;
     }
-    if (/frete\s+gr[aá]tis/i.test(l)) { o.frete = true; continue; }
+    if (/^frete\s+gr[aá]tis$/i.test(l)) { o.frete = true; continue; }
     const cupom = l.match(/^cupom:?\s*(\S+)$/i);
     if (cupom) { o.cupom = cupom[1]; continue; }
     // Código solto em maiúsculas (com número), como PRIMEGAME5
@@ -85,7 +97,19 @@ export async function lojaDoLink(url) {
   }
 }
 
-// Devolve { texto, entities, ofertas } com os nomes em negrito, ou null se não achar oferta
+// Links escondidos no texto (text_link do Telegram, como num "👉" com link) entram
+// no texto, para o rascunho não perder o link ao ser lido linha por linha
+export function comLinks(texto, entities = []) {
+  const links = entities.filter(e => e.type === 'text_link' && e.url).sort((a, b) => b.offset - a.offset);
+  for (const e of links) {
+    const fim = e.offset + e.length;
+    if (texto.slice(e.offset, fim).includes(e.url)) continue;
+    texto = texto.slice(0, fim) + ' ' + e.url + texto.slice(fim);
+  }
+  return texto;
+}
+
+// Devolve { texto, entities, ofertas, semLink } com os nomes em negrito, ou null se não achar oferta
 export function montarLista(rascunho, { loja = '' } = {}) {
   const blocos = rascunho.replace(/\r/g, '').split(/\n\s*\n/).map(b => b.trim()).filter(Boolean);
   let titulo = '';
@@ -93,6 +117,8 @@ export function montarLista(rascunho, { loja = '' } = {}) {
   blocos.forEach((b, i) => {
     const o = lerBloco(b);
     if (i === 0 && !o.link && !o.precos.length && !o.cupom) { titulo = [o.nome, ...o.outras].join(' '); return; }
+    // Rodapé de grupo (o nosso entra depois, pelo botão)
+    if (/^(canais|grupos?) de promo[cç][oõ]es/i.test(o.nome)) return;
     if (o.nome && (o.link || o.precos.length)) ofertas.push(o);
   });
   if (!ofertas.length) return null;
@@ -106,11 +132,12 @@ export function montarLista(rascunho, { loja = '' } = {}) {
     texto += '\n\n';
     entities.push({ type: 'bold', offset: texto.length, length: o.nome.length });
     texto += o.nome;
-    for (const l of o.outras) texto += '\n' + l;
     if (o.cupom) texto += `\n🎟 Cupom: ${o.cupom}`;
     if (o.link) texto += `\n👉 ${o.link}`;
+    else if (o.setaSemLink) texto += '\n👉';
     for (const p of o.precos) texto += `\n• ${p.txt}${p.cond ? ' ' + p.cond : ''}`;
     if (o.frete) texto += '\n• Frete Grátis';
+    for (const l of o.outras) texto += '\n• ' + l;
   }
-  return { texto, entities, ofertas: ofertas.length };
+  return { texto, entities, ofertas: ofertas.length, semLink: ofertas.filter(o => !o.link).map(o => o.nome) };
 }
