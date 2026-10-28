@@ -182,3 +182,25 @@ test('capa única perde a margem branca e não fica pequena na arte', async () =
   const o = (571 * 1200 + 250) * 4;
   assert.ok(r.pixels[o] > 150 && r.pixels[o + 1] < 60, `pixel ${[...r.pixels.subarray(o, o + 3)]}`);
 });
+
+test('foto larga com fundo próprio ocupa o quadro inteiro; capa e foto em fundo branco não', async () => {
+  const { gerarArte, ehFotoCheia } = await import('../lib/arte.js');
+  const pixel = (png, x, y) => {
+    const r = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1000"><image href="data:image/png;base64,${png.toString('base64')}" width="1200" height="1000"/></svg>`).render();
+    const o = (y * 1200 + x) * 4;
+    return [...r.pixels.subarray(o, o + 3)];
+  };
+  // Foto de colecionador: fundo verde-escuro até a borda, com moldura branca de print
+  const foto = png(1030, 630, '<rect width="1030" height="630" fill="#fff"/><rect x="5" y="5" width="1020" height="620" fill="#123c3c"/><rect x="300" y="200" width="400" height="200" fill="#c00"/>');
+  const arte = await gerarArte({ titulo: '', preco: '1.449,53', condicao: 'à vista', capa: foto });
+  // Beirada do quadro e lugar dos ícones das redes: o fundo da foto, sem branco nem ícones
+  for (const [x, y] of [[10, 500], [10, 200], [1145, 470], [600, 965]]) {
+    const [r, g, b] = pixel(arte, x, y);
+    assert.ok(r < 60 && g > 40 && g < 90 && b > 40 && b < 90, `(${x},${y}) ${[r, g, b]}`);
+  }
+  // Capa em pé ou foto em fundo branco: desenho de sempre, com o quadro branco
+  const capaEmPe = png(400, 500, '<rect width="400" height="500" fill="#123c3c"/>');
+  assert.equal(ehFotoCheia(capaEmPe), false);
+  const branca = png(800, 500, '<rect width="800" height="500" fill="#fff"/><rect x="200" y="100" width="400" height="300" fill="#123c3c"/>');
+  assert.deepEqual(pixel(await gerarArte({ titulo: '', preco: '10,00', capa: branca }), 10, 500), [255, 255, 255]);
+});

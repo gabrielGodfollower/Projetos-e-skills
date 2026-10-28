@@ -340,15 +340,103 @@ function camadasDaColagem(capas, A = COLAGEM_JB) {
   return c;
 }
 
+// ---------- foto cheia ----------
+// Foto larga que já tem fundo próprio (sem margem branca, como a foto oficial de uma
+// edição de colecionador) ocupa o quadro branco inteiro, entre o cabeçalho e o rodapé,
+// e o quadro do preço fica por cima. A foto aparece inteira, sem corte nem distorção;
+// a sobra em cima e embaixo (ou dos lados) é a borda da própria foto esticada.
+// Nesse modo saem os ícones das redes e o "JOGOBARA.TO/GRUPOS" (fundo-arte-cheia.png).
+export const CHEIA = { top: 160, bottom: 985, areaTop: 175, areaTopTitulo: 268, areaBottom: 972, proporcaoMin: 1.25 };
+
+// Foto com fundo próprio: larga e com a borda quase sem branco nem transparência.
+// Um fiozinho de moldura de print (até ~1,5% da largura) não conta
+export function ehFotoCheia(buf) {
+  const tipo = tipoImagem(buf), t = tamanhoImagem(buf);
+  if (!tipo || !t || !t.w || !t.h || t.w / t.h < CHEIA.proporcaoMin) return false;
+  const k = Math.min(1, 200 / Math.max(t.w, t.h));
+  const w = Math.max(16, Math.round(t.w * k)), h2 = Math.max(16, Math.round(t.h * k));
+  const mini = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h2}" viewBox="0 0 ${t.w} ${t.h}">`
+    + `<image href="data:${tipo};base64,${buf.toString('base64')}" width="${t.w}" height="${t.h}" preserveAspectRatio="none"/></svg>`).render();
+  const d = mini.pixels;
+  let borda = 0, claros = 0;
+  for (let y = 0; y < mini.height; y++) {
+    for (let x = 0; x < mini.width; x++) {
+      // Um anel um pouco para dentro: o corte da margem deixa 1 ou 2 px de sobra na borda
+      const dist = Math.min(x, y, mini.width - 1 - x, mini.height - 1 - y);
+      if (dist < 3 || dist > 5) continue;
+      const o = (y * mini.width + x) * 4;
+      borda++;
+      if (d[o + 3] < 200 || (d[o] > 225 && d[o + 1] > 225 && d[o + 2] > 225)) claros++;
+    }
+  }
+  return claros / borda < 0.15;
+}
+
+// Retângulo da foto sem a moldura da beirada (em pixels da foto)
+function semMoldura(capa, tipo, t) {
+  const k = Math.min(1, 1200 / Math.max(t.w, t.h));
+  const w = Math.max(1, Math.round(t.w * k)), h2 = Math.max(1, Math.round(t.h * k));
+  const r = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h2}" viewBox="0 0 ${t.w} ${t.h}">`
+    + `<image href="data:${tipo};base64,${capa.toString('base64')}" width="${t.w}" height="${t.h}" preserveAspectRatio="none"/></svg>`).render();
+  const d = r.pixels;
+  const moldura = (o) => { const mn = Math.min(d[o], d[o + 1], d[o + 2]), mx = Math.max(d[o], d[o + 1], d[o + 2]); return mn > 200 || mx < 25; };
+  const linha = y => { let n = 0; for (let x = 0; x < w; x++) n += moldura((y * w + x) * 4); return n / w > 0.5; };
+  const coluna = x => { let n = 0; for (let y = 0; y < h2; y++) n += moldura((y * w + x) * 4); return n / h2 > 0.5; };
+  const lim = n => Math.floor(n * 0.08);
+  let y0 = 0, y1 = h2 - 1, x0 = 0, x1 = w - 1;
+  while (y0 < lim(h2) && linha(y0)) y0++;
+  while (h2 - 1 - y1 < lim(h2) && linha(y1)) y1--;
+  while (x0 < lim(w) && coluna(x0)) x0++;
+  while (w - 1 - x1 < lim(w) && coluna(x1)) x1--;
+  const m = 2; // e mais 2 px, que a borda do print costuma vir borrada
+  const x = Math.round((x0 + m) / k), y = Math.round((y0 + m) / k);
+  return { x, y, w: Math.max(1, Math.round((x1 - m + 1) / k) - x), h: Math.max(1, Math.round((y1 - m + 1) / k) - y) };
+}
+
+// O painel da foto (1200 x 825, de y 160 a 985), desenhado à parte em PNG.
+// "comTitulo": a foto começa abaixo do título, que fica legível sobre a borda esticada
+function painelCheio(capa, tipo, comTitulo) {
+  const t = tamanhoImagem(capa);
+  const W = LARGURA_JB, H = CHEIA.bottom - CHEIA.top;
+  // Tira a moldura que sobra (resto da margem branca ou a borda escura de um print):
+  // linhas e colunas da beirada que são quase todas claras ou escuras, mais 2 px
+  const { x: i, y: j, w: cw, h: ch } = semMoldura(capa, tipo, t);
+  const topo = (comTitulo ? CHEIA.areaTopTitulo : CHEIA.areaTop) - CHEIA.top, aH = CHEIA.areaBottom - CHEIA.top - topo;
+  const k = Math.min(W / cw, aH / ch);
+  const fw = Math.round(cw * k), fh = Math.round(ch * k);
+  const x0 = Math.round((W - fw) / 2), y0 = Math.round(topo + (aH - fh) / 2);
+  const img = `<image href="data:${tipo};base64,${capa.toString('base64')}" width="${t.w}" height="${t.h}" preserveAspectRatio="none"/>`;
+  const f = Math.max(2, Math.round(12 / k)); // ~12 px da borda, só fundo
+  // Um pedaço da borda da foto, espelhado e esticado para cobrir a sobra
+  const tira = (x, y, w, h2, caixa, espelho) => (w > 0 && h2 > 0)
+    ? `<svg x="${x}" y="${y}" width="${w}" height="${h2}" viewBox="${caixa}" preserveAspectRatio="none"><g transform="${espelho}">${img}</g></svg>` : '';
+  const partes = [
+    tira(x0, 0, fw, y0, `${i} ${j} ${cw} ${f}`, `translate(0,${2 * j + f}) scale(1,-1)`),
+    tira(x0, y0 + fh, fw, H - y0 - fh, `${i} ${j + ch - f} ${cw} ${f}`, `translate(0,${2 * (j + ch) - f}) scale(1,-1)`),
+    tira(0, 0, x0, H, `${i} ${j} ${f} ${ch}`, `translate(${2 * i + f},0) scale(-1,1)`),
+    tira(x0 + fw, 0, W - x0 - fw, H, `${i + cw - f} ${j} ${f} ${ch}`, `translate(${2 * (i + cw) - f},0) scale(-1,1)`),
+    `<svg x="${x0}" y="${y0}" width="${fw}" height="${fh}" viewBox="${i} ${j} ${cw} ${ch}" preserveAspectRatio="none">${img}</svg>`
+  ];
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${partes.join('')}</svg>`;
+  return 'data:image/png;base64,' + Buffer.from(new Resvg(svg).render().asPng()).toString('base64');
+}
+
+const FUNDO_CHEIA = png64('fundo-arte-cheia.png');
+
 const JOGO_BARATO = {
   largura: LARGURA_JB, altura: 1000, fundo: png64('fundo-arte.png'),
-  camadas({ titulo, preco, condicao, capa, tipo, capas }) {
+  camadas({ titulo, preco, condicao, capa, tipo, capas, cheia }) {
     const c = [];
     if (capas && capas.length) c.push(...camadasDaColagem(capas));
-    else if (tipo) c.push(capaImg(capa, tipo, areaDoProduto(tamanhoImagem(capa))));
+    else if (tipo && cheia) {
+      c.push({ type: 'img', props: { src: painelCheio(capa, tipo, Boolean(titulo)), width: LARGURA_JB, height: CHEIA.bottom - CHEIA.top, style: { position: 'absolute', left: 0, top: CHEIA.top } } });
+      c.push({ type: 'img', props: { src: FUNDO_CHEIA, width: LARGURA_JB, height: 1000, style: { position: 'absolute', left: 0, top: 0 } } });
+    } else if (tipo) c.push(capaImg(capa, tipo, areaDoProduto(tamanhoImagem(capa))));
     if (titulo) {
+      // Em cima da foto cheia o título sai em branco, com sombra para ler em qualquer fundo
       const T = LAYOUT_JB.titulo, tam = tamanhoQueCabe(T.fonte, titulo, T.tam, T.larguraMax);
-      c.push(naBase(titulo, { left: T.x, color: T.cor, fontFamily: 'Baloo', fontWeight: 500, tam, linhaDeBase: T.base, base: medir(T.fonte, titulo, tam).base }));
+      const cor = cheia && tipo ? { color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.85)' } : { color: T.cor };
+      c.push(naBase(titulo, { left: T.x, ...cor, fontFamily: 'Baloo', fontWeight: 500, tam, linhaDeBase: T.base, base: medir(T.fonte, titulo, tam).base }));
     }
     if (preco) {
       for (const l of linhasDoPrecoJB(preco, condicao)) {
@@ -393,13 +481,16 @@ export async function gerarArte({ titulo, preco, condicao = 'à vista', capa, ca
   const m = MODELOS[modelo] || JOGO_BARATO;
   // A capa única também perde a margem branca: foto montada (vários produtos num fundo
   // branco) ficava pequena na arte, porque a margem entrava na conta do tamanho
+  // Foto com fundo próprio ocupa o quadro inteiro (só no modelo Jogo Barato). Conta a
+  // foto como veio: produto em fundo branco não vale, mesmo que o produto seja retangular
+  const cheia = Boolean(capa) && (m === JOGO_BARATO) && ehFotoCheia(capa);
   const cortada = capa && semBordaBranca(capa);
   if (cortada) capa = cortada.capa;
   const tipo = capa && tipoImagem(capa);
   const recortadas = capas && capas.map(semBordaBranca).filter(Boolean);
   const filhos = [
     { type: 'img', props: { src: m.fundo, width: m.largura, height: m.altura, style: { position: 'absolute', left: 0, top: 0 } } },
-    ...m.camadas({ titulo, preco, condicao, capa, tipo, capas: recortadas })
+    ...m.camadas({ titulo, preco, condicao, capa, tipo, capas: recortadas, cheia })
   ];
   const svg = await satori(
     h('div', { position: 'relative', width: m.largura, height: m.altura, background: '#fff' }, filhos),
