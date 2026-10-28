@@ -302,7 +302,10 @@ export function semBordaBranca(buf) {
   for (let y = 0; y < mini.height; y++) {
     for (let x = 0; x < mini.width; x++) {
       const o = (y * mini.width + x) * 4;
-      if (d[o + 3] < 16 || (d[o] > 240 && d[o + 1] > 240 && d[o + 2] > 240)) continue;
+      // A cópia pequena vem com a cor multiplicada pela transparência, e a beirada sai
+      // meio transparente quando a escala não fecha: branco é a cor perto do alfa
+      const a = d[o + 3], claro = a * 0.94;
+      if (a < 16 || (d[o] > claro && d[o + 1] > claro && d[o + 2] > claro)) continue;
       if (x < x0) x0 = x;
       if (x > x1) x1 = x;
       if (y < y0) y0 = y;
@@ -483,9 +486,12 @@ export async function gerarArte({ titulo, preco, condicao = 'à vista', capa, ca
   // branco) ficava pequena na arte, porque a margem entrava na conta do tamanho
   // Foto com fundo próprio ocupa o quadro inteiro (só no modelo Jogo Barato). Conta a
   // foto como veio: produto em fundo branco não vale, mesmo que o produto seja retangular
-  const cheia = Boolean(capa) && (m === JOGO_BARATO) && ehFotoCheia(capa);
   const cortada = capa && semBordaBranca(capa);
   if (cortada) capa = cortada.capa;
+  // Decide depois do corte: print com margem branca larga em volta da foto também vale.
+  // Produto em fundo branco continua de fora, porque o recorte dele não é um retângulo
+  // cheio (os cantos e a base ficam brancos)
+  const cheia = Boolean(capa) && (m === JOGO_BARATO) && ehFotoCheia(capa);
   const tipo = capa && tipoImagem(capa);
   const recortadas = capas && capas.map(semBordaBranca).filter(Boolean);
   const filhos = [

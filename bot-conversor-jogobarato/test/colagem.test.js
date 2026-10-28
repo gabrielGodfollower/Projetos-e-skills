@@ -201,6 +201,11 @@ test('foto larga com fundo próprio ocupa o quadro inteiro; capa e foto em fundo
   // Capa em pé ou foto em fundo branco: desenho de sempre, com o quadro branco
   const capaEmPe = png(400, 500, '<rect width="400" height="500" fill="#123c3c"/>');
   assert.equal(ehFotoCheia(capaEmPe), false);
-  const branca = png(800, 500, '<rect width="800" height="500" fill="#fff"/><rect x="200" y="100" width="400" height="300" fill="#123c3c"/>');
+  // Print do Mercado Livre: a foto com uma margem branca larga em volta também enche
+  const print = png(1300, 900, '<rect width="1300" height="900" fill="#fff"/><rect x="120" y="110" width="1030" height="630" fill="#123c3c"/>');
+  const [pr, pg] = pixel(await gerarArte({ titulo: '', preco: '1.449,53', capa: print }), 10, 500);
+  assert.ok(pr < 60 && pg > 40 && pg < 90, `print ${[pr, pg]}`);
+  // TV com pé em fundo branco: o recorte tem cantos brancos
+  const branca = png(800, 500, '<rect width="800" height="500" fill="#fff"/><rect x="200" y="100" width="400" height="250" fill="#123c3c"/><rect x="380" y="350" width="40" height="50" fill="#333"/>');
   assert.deepEqual(pixel(await gerarArte({ titulo: '', preco: '10,00', capa: branca }), 10, 500), [255, 255, 255]);
 });
