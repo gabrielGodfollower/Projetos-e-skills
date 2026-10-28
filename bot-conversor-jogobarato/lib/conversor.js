@@ -43,7 +43,9 @@ function wrap(mark, inner) {
 // Regex no estilo do WhatsApp: marcador colado ao texto, com espaço/pontuação em volta
 function waRegex(ch) {
   const c = '\\' + ch;
-  return new RegExp('(^|[\\s(\\[{"\'«])' + c + '(\\S(?:[^' + c + '\\n]*\\S)?)' + c + '(?=$|[\\s.,!?:;)\\]}"\'»…-])', 'gm');
+  // Antes do marcador também vale pontuação e o fim de uma tag já convertida ("*_itálico_*",
+  // "(65U7ESG*)*:*"); depois, o começo de uma tag
+  return new RegExp('(^|[\\s(\\[{"\'«).,:;!?>])' + c + '(\\S(?:[^' + c + '\\n]*\\S)?)' + c + '(?=$|[\\s.,!?:;)\\]}"\'»…<-])', 'gm');
 }
 export function escHtml(s) {
   return s.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -81,8 +83,28 @@ function marcasHtml(e) {
 
 // Aplica as entities ao texto. Os offsets do Telegram são em unidades UTF-16,
 // que é exatamente como as strings do JavaScript são indexadas.
+// Negrito (ou itálico, tachado) partido em pedaços colados, como "65\" (65U7ESG" + ")" + ":",
+// vira um pedaço só; senão o WhatsApp recebe "*65\" (65U7ESG*)*:*"
+const JUNTAVEIS = new Set(['bold', 'italic', 'strikethrough']);
+function juntarPedacos(texto, entities) {
+  const outras = entities.filter(e => !JUNTAVEIS.has(e.type));
+  const juntas = [];
+  for (const tipo of JUNTAVEIS) {
+    const lista = entities.filter(e => e.type === tipo).map(e => ({ ...e })).sort((a, b) => a.offset - b.offset);
+    for (const e of lista) {
+      const ult = juntas.length && juntas[juntas.length - 1].type === tipo ? juntas[juntas.length - 1] : null;
+      const fimUlt = ult && ult.offset + ult.length;
+      if (ult && e.offset <= fimUlt + 2 && /^[^\s\w]*$/u.test(texto.slice(fimUlt, Math.max(fimUlt, e.offset)))) {
+        ult.length = Math.max(fimUlt, e.offset + e.length) - ult.offset;
+      } else juntas.push(e);
+    }
+  }
+  return [...outras, ...juntas];
+}
+
 export function entitiesPara(destino, texto, entities = []) {
   const wa = destino === 'wa';
+  if (wa) entities = juntarPedacos(texto, entities);
   const eventos = [];
   entities.forEach((e, i) => {
     if (!FORMATOS.has(e.type)) return;

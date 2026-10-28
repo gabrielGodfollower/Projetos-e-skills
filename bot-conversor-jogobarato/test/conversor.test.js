@@ -195,3 +195,14 @@ test('fundo do Jogo Barato é o original de 1200x1000', async () => {
   const { readFileSync } = await import('node:fs');
   assert.deepEqual(tamanhoImagem(readFileSync(new URL('../assets/fundo-arte.png', import.meta.url))), { w: 1200, h: 1000 });
 });
+
+test('texto do zap com itálico dentro do negrito e negrito em pedaços vira Telegram certo', async () => {
+  const { textoParaHtml } = await import('../lib/conversor.js');
+  assert.equal(textoParaHtml('*_Adicione a TV no carrinho_*'), '<b><i>Adicione a TV no carrinho</i></b>');
+  assert.equal(textoParaHtml('*65" (65U7ESG*)*:*'), '<b>65&quot; (65U7ESG</b>)<b>:</b>');
+  // Pedaços de negrito colados saem como um negrito só no WhatsApp
+  const t = '65" (65U7ESG):\nok';
+  assert.equal(entitiesPara('wa', t, [{ type: 'bold', offset: 0, length: 12 }, { type: 'bold', offset: 12, length: 1 }, { type: 'bold', offset: 13, length: 1 }]), '*65" (65U7ESG):*\nok');
+  // Separados por palavra continuam separados
+  assert.equal(entitiesPara('wa', 'um dois três', [{ type: 'bold', offset: 0, length: 2 }, { type: 'bold', offset: 8, length: 4 }]), '*um* dois *três*');
+});
