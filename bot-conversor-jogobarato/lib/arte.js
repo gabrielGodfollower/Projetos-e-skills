@@ -350,7 +350,7 @@ function camadasDaColagem(capas, A = COLAGEM_JB) {
 // a sobra em cima e embaixo (ou dos lados) é a borda da própria foto esticada.
 // Nesse modo saem os ícones das redes e o "JOGOBARA.TO/GRUPOS" (fundo-arte-cheia.png).
 export const CHEIA = {
-  top: 160, bottom: 985, areaTop: 175, areaTopTitulo: 268, areaBottom: 972, proporcaoMin: 1.25,
+  top: 160, bottom: 985, areaTop: 175, areaTopTitulo: 268, areaBottom: 972, proporcaoMin: 1.25, corteMax: 0.04,
   // Lado direito (inclinado) do quadro do preço no fundo: x 1165 na altura 870, 1153 na 972
   ladoDoPreco: { y: 870, y1: 972, x0: 1165, x1: 1153 }
 };
@@ -407,8 +407,18 @@ function painelCheio(capa, tipo, comTitulo) {
   const W = LARGURA_JB, H = CHEIA.bottom - CHEIA.top;
   // Tira a moldura que sobra (resto da margem branca ou a borda escura de um print):
   // linhas e colunas da beirada que são quase todas claras ou escuras, mais 2 px
-  const { x: i, y: j, w: cw, h: ch } = semMoldura(capa, tipo, t);
+  let { x: i, y: j, w: cw, h: ch } = semMoldura(capa, tipo, t);
   const topo = (comTitulo ? CHEIA.areaTopTitulo : CHEIA.areaTop) - CHEIA.top, aH = CHEIA.areaBottom - CHEIA.top - topo;
+  // Sobra fininha nos lados (ou em cima e embaixo) fica feia esticada: aí a foto perde
+  // até 4% na outra direção e encosta na beirada. Sobra maior continua esticada, para
+  // não cortar o que importa da foto
+  if (aH / ch * cw < W && aH / ch * cw >= W * (1 - CHEIA.corteMax)) {
+    const nh = Math.round(cw * aH / W);
+    j += Math.round((ch - nh) / 2); ch = nh;
+  } else if (W / cw * ch < aH && W / cw * ch >= aH * (1 - CHEIA.corteMax)) {
+    const nw = Math.round(ch * W / aH);
+    i += Math.round((cw - nw) / 2); cw = nw;
+  }
   const k = Math.min(W / cw, aH / ch);
   const fw = Math.round(cw * k), fh = Math.round(ch * k);
   const x0 = Math.round((W - fw) / 2), y0 = Math.round(topo + (aH - fh) / 2);

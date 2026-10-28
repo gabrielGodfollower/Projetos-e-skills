@@ -205,6 +205,13 @@ test('foto larga com fundo próprio ocupa o quadro inteiro; capa e foto em fundo
   const print = png(1300, 900, '<rect width="1300" height="900" fill="#fff"/><rect x="120" y="110" width="1030" height="630" fill="#123c3c"/>');
   const [pr, pg] = pixel(await gerarArte({ titulo: '', preco: '1.449,53', capa: print }), 10, 500);
   assert.ok(pr < 60 && pg > 40 && pg < 90, `print ${[pr, pg]}`);
+  // Foto só um pouco mais estreita que o quadro: encosta nas beiradas em vez de esticar
+  const estreita = png(1170, 704, '<rect width="1170" height="704" fill="#123c3c"/><rect width="6" height="704" fill="#c00"/><rect x="1164" width="6" height="704" fill="#c00"/>');
+  const artEstreita = await gerarArte({ titulo: 'Fire Emblem', preco: '1,00', capa: estreita });
+  for (const x of [2, 1197]) {
+    const [vr, vg] = pixel(artEstreita, x, 600);
+    assert.ok(vr > 150 && vg < 60, `beirada (${x},600) ${[vr, vg]}`);
+  }
   // Etiqueta branca no canto da foto, que ficaria aparecendo na beirada do quadro do preço
   const etiqueta = png(1200, 704, '<rect width="1200" height="704" fill="#123c3c"/><rect x="1100" y="600" width="68" height="90" fill="#fff"/>');
   const comEtiqueta = await gerarArte({ titulo: 'Fire Emblem', preco: '1.449,53', capa: etiqueta });
