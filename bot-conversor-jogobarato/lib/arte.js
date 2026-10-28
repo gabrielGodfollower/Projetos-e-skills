@@ -391,6 +391,10 @@ const MODELOS = { jb: JOGO_BARATO, ind: JB_INDICA };
 // "capas" (várias capas ou fotos) monta a colagem no lugar da capa única
 export async function gerarArte({ titulo, preco, condicao = 'à vista', capa, capas, modelo = 'jb' }) {
   const m = MODELOS[modelo] || JOGO_BARATO;
+  // A capa única também perde a margem branca: foto montada (vários produtos num fundo
+  // branco) ficava pequena na arte, porque a margem entrava na conta do tamanho
+  const cortada = capa && semBordaBranca(capa);
+  if (cortada) capa = cortada.capa;
   const tipo = capa && tipoImagem(capa);
   const recortadas = capas && capas.map(semBordaBranca).filter(Boolean);
   const filhos = [

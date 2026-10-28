@@ -171,3 +171,14 @@ test('colagem desenha foto JPEG sem margem (foto do Telegram)', async () => {
   const o = (565 * 1200 + 600) * 4;
   assert.ok(r.pixels[o] > 150 && r.pixels[o + 1] < 60, `pixel ${[...r.pixels.subarray(o, o + 3)]}`);
 });
+
+test('capa única perde a margem branca e não fica pequena na arte', async () => {
+  const { gerarArte } = await import('../lib/arte.js');
+  // Foto montada: produtos pequenos num fundo branco grande
+  const foto = png(800, 500, '<rect width="800" height="500" fill="#fff"/><rect x="300" y="190" width="200" height="120" fill="#c00"/>');
+  const arte = await gerarArte({ titulo: 'Combo', preco: '4.646,00', condicao: 'à vista', capa: foto });
+  const r = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1000"><image href="data:image/png;base64,${arte.toString('base64')}" width="1200" height="1000"/></svg>`).render();
+  // Sem o corte o vermelho ficava entre x 528 e 672; cortado, ocupa a largura das imagens largas
+  const o = (571 * 1200 + 250) * 4;
+  assert.ok(r.pixels[o] > 150 && r.pixels[o + 1] < 60, `pixel ${[...r.pixels.subarray(o, o + 3)]}`);
+});
