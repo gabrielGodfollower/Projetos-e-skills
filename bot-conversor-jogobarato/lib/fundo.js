@@ -22,12 +22,17 @@ export async function tirarFundo(foto, { fetch: f = fetch } = {}) {
   corpo.append('image_file', new Blob([foto]), 'foto');
   corpo.append('size', 'auto');
   corpo.append('format', 'png');
-  const r = await f(API, {
-    method: 'POST',
-    headers: { 'X-Api-Key': process.env.REMOVEBG_API_KEY || '' },
-    body: corpo,
-    signal: AbortSignal.timeout(40000)
-  });
+  let r;
+  try {
+    r = await f(API, {
+      method: 'POST',
+      headers: { 'X-Api-Key': process.env.REMOVEBG_API_KEY || '' },
+      body: corpo,
+      signal: AbortSignal.timeout(25000) // a função da Vercel tem 60 s no total
+    });
+  } catch (e) {
+    throw new Error(e.name === 'TimeoutError' ? 'o remove.bg demorou demais para responder' : 'não deu para falar com o remove.bg (' + e.message + ')');
+  }
   if (!r.ok) {
     let msg = '';
     try { msg = ((await r.json()).errors || []).map(e => e.title).join('; '); } catch {}

@@ -436,17 +436,24 @@ async function fundo(cb, original, acao, destino, grupo) {
   const recortar = async capa => {
     try { return await tirarFundo(capa); } catch (e) { erro = e; throw e; }
   };
-  const arte = await tentarArte(original, c.texto, c.entities, grupo, tirar ? { recortar } : {});
-  if (!arte || !arte.png) {
-    await tg('sendMessage', { chat_id: resposta.chat.id, text: erro ? 'Não consegui tirar o fundo: ' + erro.message + '.' : 'Não consegui refazer a arte.' });
-    return;
+  const avisar = text => tg('sendMessage', { chat_id: resposta.chat.id, reply_to_message_id: resposta.message_id, text });
+  // Qualquer falha vira mensagem: sem isso o botão só mostrava "Tirando o fundo..." e nada
+  try {
+    const arte = await tentarArte(original, c.texto, c.entities, grupo, tirar ? { recortar } : {});
+    if (!arte || !arte.png) {
+      await avisar(erro ? 'Não consegui tirar o fundo: ' + erro.message + '.' : 'Não consegui refazer a arte.');
+      return;
+    }
+    const opcoes = { enviados: enviadosDe(resposta.reply_markup), fundo: tirar ? 'voltar' : 'tirar' };
+    await trocarFoto({
+      chat_id: resposta.chat.id, message_id: resposta.message_id,
+      caption: resposta.caption, caption_entities: resposta.caption_entities,
+      reply_markup: teclado(destino, grupo, opcoes)
+    }, arte.png);
+  } catch (e) {
+    console.error(e);
+    await avisar('Não consegui trocar a arte: ' + e.message + '.');
   }
-  const opcoes = { enviados: enviadosDe(resposta.reply_markup), fundo: tirar ? 'voltar' : 'tirar' };
-  await trocarFoto({
-    chat_id: resposta.chat.id, message_id: resposta.message_id,
-    caption: resposta.caption, caption_entities: resposta.caption_entities,
-    reply_markup: teclado(destino, grupo, opcoes)
-  }, arte.png);
 }
 
 // Você respondeu a uma mensagem do bot com uma foto: refaz a arte com essa foto como capa
