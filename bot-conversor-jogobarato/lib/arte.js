@@ -404,6 +404,25 @@ function semMoldura(capa, tipo, t) {
   return { x, y, w: Math.max(1, Math.round((x1 - m + 1) / k) - x), h: Math.max(1, Math.round((y1 - m + 1) / k) - y) };
 }
 
+// A tira da borda da foto que seria esticada: a cor do fundo dela (a mediana) e se ela
+// tem desenho, que esticado vira listras. "deitada": tira de cima ou de baixo
+function bordaDaFoto(img, caixa, t, deitada) {
+  const [, , bw, bh] = caixa.split(' ').map(Number);
+  const w = deitada ? 300 : Math.max(2, Math.round(300 * bw / bh)), h2 = deitada ? Math.max(2, Math.round(300 * bh / bw)) : 300;
+  const d = new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h2}">`
+    + `<svg width="${w}" height="${h2}" viewBox="${caixa}" preserveAspectRatio="none">${img}</svg></svg>`).render().pixels;
+  const canais = [[], [], []];
+  for (let o = 0; o < d.length; o += 4) for (let c = 0; c < 3; c++) canais[c].push(d[o + c]);
+  const med = canais.map(v => v.slice().sort((a, b) => a - b)[v.length >> 1]);
+  let fora = 0;
+  for (let p = 0; p < canais[0].length; p++) {
+    if (Math.abs(canais[0][p] - med[0]) + Math.abs(canais[1][p] - med[1]) + Math.abs(canais[2][p] - med[2]) > 90) fora++;
+  }
+  const cor = '#' + med.map(v => v.toString(16).padStart(2, '0')).join('');
+  return { cor, desenho: fora / canais[0].length > LIMITE_DESENHO };
+}
+const LIMITE_DESENHO = 0.1;
+
 // O painel da foto (1200 x 825, de y 160 a 985), desenhado à parte em PNG.
 // "comTitulo": a foto começa abaixo do título, que fica legível sobre a borda esticada
 function painelCheio(capa, tipo, comTitulo) {
@@ -431,13 +450,28 @@ function painelCheio(capa, tipo, comTitulo) {
   // Um pedaço da borda da foto, espelhado e esticado para cobrir a sobra
   const tira = (x, y, w, h2, caixa, espelho) => (w > 0 && h2 > 0)
     ? `<svg x="${x}" y="${y}" width="${w}" height="${h2}" viewBox="${caixa}" preserveAspectRatio="none"><g transform="${espelho}">${img}</g></svg>` : '';
+  // Borda com desenho (um letreiro cortado, um logo) vira listras quando esticada: aí a
+  // sobra é a cor do fundo da borda, e a foto se funde nela aos poucos
+  const lisa = [], fusoes = [];
+  const sobra = (x, y, w, h2, caixa, espelho, lado) => {
+    if (w <= 0 || h2 <= 0) return '';
+    const b = bordaDaFoto(img, caixa, t, lado === 'cima' || lado === 'baixo');
+    if (!b.desenho) return tira(x, y, w, h2, caixa, espelho);
+    const n = lisa.length, F = 40, cor = b.cor;
+    const g = { cima: [x0, y0, fw, F, '0 0 0 1'], baixo: [x0, y0 + fh - F, fw, F, '0 1 0 0'], esquerda: [x0, 0, F, H, '0 0 1 0'], direita: [x0 + fw - F, 0, F, H, '1 0 0 0'] }[lado];
+    const [gx1, gy1, gx2, gy2] = g[4].split(' ');
+    lisa.push(`<linearGradient id="fusao${n}" x1="${gx1}" y1="${gy1}" x2="${gx2}" y2="${gy2}"><stop offset="0" stop-color="${cor}"/><stop offset="1" stop-color="${cor}" stop-opacity="0"/></linearGradient>`);
+    fusoes.push(`<rect x="${g[0]}" y="${g[1]}" width="${g[2]}" height="${g[3]}" fill="url(#fusao${n})"/>`);
+    return `<rect x="${x}" y="${y}" width="${w}" height="${h2}" fill="${cor}"/>`;
+  };
   const partes = [
-    tira(x0, 0, fw, y0, `${i} ${j} ${cw} ${f}`, `translate(0,${2 * j + f}) scale(1,-1)`),
-    tira(x0, y0 + fh, fw, H - y0 - fh, `${i} ${j + ch - f} ${cw} ${f}`, `translate(0,${2 * (j + ch) - f}) scale(1,-1)`),
-    tira(0, 0, x0, H, `${i} ${j} ${f} ${ch}`, `translate(${2 * i + f},0) scale(-1,1)`),
-    tira(x0 + fw, 0, W - x0 - fw, H, `${i + cw - f} ${j} ${f} ${ch}`, `translate(${2 * (i + cw) - f},0) scale(-1,1)`),
+    sobra(x0, 0, fw, y0, `${i} ${j} ${cw} ${f}`, `translate(0,${2 * j + f}) scale(1,-1)`, 'cima'),
+    sobra(x0, y0 + fh, fw, H - y0 - fh, `${i} ${j + ch - f} ${cw} ${f}`, `translate(0,${2 * (j + ch) - f}) scale(1,-1)`, 'baixo'),
+    sobra(0, 0, x0, H, `${i} ${j} ${f} ${ch}`, `translate(${2 * i + f},0) scale(-1,1)`, 'esquerda'),
+    sobra(x0 + fw, 0, W - x0 - fw, H, `${i + cw - f} ${j} ${f} ${ch}`, `translate(${2 * (i + cw) - f},0) scale(-1,1)`, 'direita'),
     `<svg x="${x0}" y="${y0}" width="${fw}" height="${fh}" viewBox="${i} ${j} ${cw} ${ch}" preserveAspectRatio="none">${img}</svg>`
   ];
+  if (lisa.length) partes.push(`<defs>${lisa.join('')}</defs>`, ...fusoes);
   const svg = () => `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${partes.join('')}</svg>`;
   let r = new Resvg(svg()).render();
   // Coisa clara da foto colada na direita do quadro do preço (a etiqueta de classificação

@@ -219,6 +219,14 @@ test('foto larga com fundo próprio ocupa o quadro inteiro; capa e foto em fundo
     const [er, eg, eb] = pixel(comEtiqueta, 1166, y);
     assert.ok(Math.min(er, eg, eb) < 120, `etiqueta (1166,${y}) ${[er, eg, eb]}`);
   }
+  // Letreiro cortado na beirada de cima: esticado virava listras; a sobra fica da cor do fundo
+  const barras = Array.from({ length: 35 }, (_, n) => `<rect x="${n * 40}" width="12" height="60" fill="#d8b060"/>`).join('');
+  const letreiro = png(1400, 700, `<rect width="1400" height="700" fill="#3a1010"/>${barras}`);
+  const comLetreiro = await gerarArte({ titulo: '', preco: '1,00', capa: letreiro });
+  for (const x of [400, 417, 700, 717]) {
+    const [lr, lg, lb] = pixel(comLetreiro, x, 230);
+    assert.ok(Math.abs(lr - 0x3a) < 12 && lg < 30 && lb < 30, `sobra (${x},230) ${[lr, lg, lb]}`);
+  }
   // TV com pé em fundo branco: o recorte tem cantos brancos
   const branca = png(800, 500, '<rect width="800" height="500" fill="#fff"/><rect x="200" y="100" width="400" height="250" fill="#123c3c"/><rect x="380" y="350" width="40" height="50" fill="#333"/>');
   assert.deepEqual(pixel(await gerarArte({ titulo: '', preco: '10,00', capa: branca }), 10, 500), [255, 255, 255]);
