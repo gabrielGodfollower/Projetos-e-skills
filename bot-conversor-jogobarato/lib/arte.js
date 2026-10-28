@@ -349,7 +349,11 @@ function camadasDaColagem(capas, A = COLAGEM_JB) {
 // e o quadro do preço fica por cima. A foto aparece inteira, sem corte nem distorção;
 // a sobra em cima e embaixo (ou dos lados) é a borda da própria foto esticada.
 // Nesse modo saem os ícones das redes e o "JOGOBARA.TO/GRUPOS" (fundo-arte-cheia.png).
-export const CHEIA = { top: 160, bottom: 985, areaTop: 175, areaTopTitulo: 268, areaBottom: 972, proporcaoMin: 1.25 };
+export const CHEIA = {
+  top: 160, bottom: 985, areaTop: 175, areaTopTitulo: 268, areaBottom: 972, proporcaoMin: 1.25,
+  // Lado direito (inclinado) do quadro do preço no fundo: x 1165 na altura 870, 1153 na 972
+  ladoDoPreco: { y: 870, y1: 972, x0: 1165, x1: 1153 }
+};
 
 // Foto com fundo próprio: larga e com a borda quase sem branco nem transparência.
 // Um fiozinho de moldura de print (até ~1,5% da largura) não conta
@@ -420,8 +424,36 @@ function painelCheio(capa, tipo, comTitulo) {
     tira(x0 + fw, 0, W - x0 - fw, H, `${i + cw - f} ${j} ${f} ${ch}`, `translate(${2 * (i + cw) - f},0) scale(-1,1)`),
     `<svg x="${x0}" y="${y0}" width="${fw}" height="${fh}" viewBox="${i} ${j} ${cw} ${ch}" preserveAspectRatio="none">${img}</svg>`
   ];
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${partes.join('')}</svg>`;
-  return 'data:image/png;base64,' + Buffer.from(new Resvg(svg).render().asPng()).toString('base64');
+  const svg = () => `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${partes.join('')}</svg>`;
+  let r = new Resvg(svg()).render();
+  // Coisa clara da foto colada na direita do quadro do preço (a etiqueta de classificação
+  // no canto das fotos oficiais) aparece como um fio branco: a faixa entre o quadro e a
+  // beirada passa a ser a borda da foto esticada, como as sobras
+  const { y: py0, y1: py1, x0: bx0, x1: bx1 } = CHEIA.ladoDoPreco;
+  const borda = y => Math.round(bx0 + (bx1 - bx0) * (y - py0) / (py1 - py0));
+  let claro = false;
+  const d = r.pixels; // cada leitura de pixels copia a imagem toda
+  for (let y = py0; y <= Math.min(py1, CHEIA.bottom - 1) && !claro; y++) {
+    for (let x = borda(y) - 2; x < Math.min(W, borda(y) + 30) && !claro; x++) {
+      const o = ((y - CHEIA.top) * W + x) * 4;
+      if (d[o] > 150 && d[o + 1] > 150 && d[o + 2] > 150) claro = true;
+    }
+  }
+  if (claro) {
+    // Retângulo simples (o que fica embaixo do quadro do preço não aparece), que some
+    // aos poucos em cima para não marcar uma linha na foto
+    const sobe = 40, yt = py0 - CHEIA.top - sobe, xe = borda(Math.min(py1, CHEIA.bottom)) - 6;
+    partes.push(`<defs><linearGradient id="somePreco" x1="0" y1="0" x2="0" y2="1">`
+      + `<stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="${(sobe / (H - yt)).toFixed(3)}" stop-color="#fff"/></linearGradient>`
+      + `<mask id="ladoPreco" maskUnits="userSpaceOnUse" x="${xe}" y="${yt}" width="${W - xe}" height="${H - yt}">`
+      + `<rect x="${xe}" y="${yt}" width="${W - xe}" height="${H - yt}" fill="url(#somePreco)"/></mask></defs>`
+      // O resvg perde o <svg> de dentro quando ele vai numa máscara: o pedaço vira PNG antes
+      + `<image x="${xe}" y="${yt}" width="${W - xe}" height="${H - yt}" mask="url(#ladoPreco)" href="data:image/png;base64,`
+      + Buffer.from(new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="${W - xe}" height="${H - yt}">`
+        + tira(0, 0, W - xe, H - yt, `${i + cw - f} ${j + ch - 4 * f} ${f} ${4 * f}`, 'translate(0,0)') + '</svg>').render().asPng()).toString('base64') + '"/>');
+    r = new Resvg(svg()).render();
+  }
+  return 'data:image/png;base64,' + Buffer.from(r.asPng()).toString('base64');
 }
 
 const FUNDO_CHEIA = png64('fundo-arte-cheia.png');

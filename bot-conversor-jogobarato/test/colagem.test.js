@@ -205,6 +205,13 @@ test('foto larga com fundo próprio ocupa o quadro inteiro; capa e foto em fundo
   const print = png(1300, 900, '<rect width="1300" height="900" fill="#fff"/><rect x="120" y="110" width="1030" height="630" fill="#123c3c"/>');
   const [pr, pg] = pixel(await gerarArte({ titulo: '', preco: '1.449,53', capa: print }), 10, 500);
   assert.ok(pr < 60 && pg > 40 && pg < 90, `print ${[pr, pg]}`);
+  // Etiqueta branca no canto da foto, que ficaria aparecendo na beirada do quadro do preço
+  const etiqueta = png(1200, 704, '<rect width="1200" height="704" fill="#123c3c"/><rect x="1100" y="600" width="68" height="90" fill="#fff"/>');
+  const comEtiqueta = await gerarArte({ titulo: 'Fire Emblem', preco: '1.449,53', capa: etiqueta });
+  for (const y of [900, 930, 960]) {
+    const [er, eg, eb] = pixel(comEtiqueta, 1166, y);
+    assert.ok(Math.min(er, eg, eb) < 120, `etiqueta (1166,${y}) ${[er, eg, eb]}`);
+  }
   // TV com pé em fundo branco: o recorte tem cantos brancos
   const branca = png(800, 500, '<rect width="800" height="500" fill="#fff"/><rect x="200" y="100" width="400" height="250" fill="#123c3c"/><rect x="380" y="350" width="40" height="50" fill="#333"/>');
   assert.deepEqual(pixel(await gerarArte({ titulo: '', preco: '10,00', capa: branca }), 10, 500), [255, 255, 255]);
