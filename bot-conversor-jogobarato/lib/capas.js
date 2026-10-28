@@ -35,8 +35,9 @@ async function capasDoProduto(nome, contexto) {
 // "soFoto": a pessoa escolheu a foto, então nada de banco nem colagem.
 // "capaDoLink": função que procura a imagem pela página do link, chamada só se precisar.
 // "semImagem": gera a arte mesmo sem achar imagem nenhuma (senão png fica null).
+// "recortar": função que tira o fundo da imagem (botão "Tirar fundo"); só vale com uma imagem.
 // Devolve { png, imagem: 'album' | 'colagem' | 'foto' | 'banco' | 'link' | null, capas, faltam }
-export async function arteDaOferta(texto, { grupo = 'jb', foto = null, fotos = [], soFoto = false, semImagem = false, capaDoLink = async () => null } = {}) {
+export async function arteDaOferta(texto, { grupo = 'jb', foto = null, fotos = [], soFoto = false, semImagem = false, capaDoLink = async () => null, recortar = null } = {}) {
   const modelo = modeloDoGrupo(grupo);
   const dados = dadosDaOferta(texto);
   const banco = modelo === 'jb' && bancoLigado() && !soFoto;
@@ -85,6 +86,7 @@ export async function arteDaOferta(texto, { grupo = 'jb', foto = null, fotos = [
     capa = await capaDoLink();
     if (capa) imagem = 'link';
   }
+  if (capa && recortar) capa = await recortar(capa);
   const png = capa || semImagem ? await gerarArte({ ...dados, capa, modelo }) : null;
   return { png, imagem, capas: 0, faltam: [] };
 }

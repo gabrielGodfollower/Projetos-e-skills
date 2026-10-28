@@ -13,6 +13,7 @@
 // 6. Com o SendFlow configurado, o botão "Enviar nos grupos" manda a oferta pro WhatsApp.
 import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js';
 import { tg, baixarArquivo, enviarFoto, trocarFoto, linkPublicoDaFoto } from '../lib/telegram.js';
+import { removeBgLigado, tirarFundo } from '../lib/fundo.js';
 import { dadosDaOferta, capaDoLink, modeloDoGrupo } from '../lib/arte.js';
 import { arteDaOferta } from '../lib/capas.js';
 import { montarLista, lojaDoLink, comLinks, estiloDeFora } from '../lib/lista.js';
@@ -54,7 +55,8 @@ function podeDisparar(userId) {
 // O botão "Gerar arte" só aparece quando a resposta ainda não é a arte.
 // "enviados" guarda pra quais grupos a oferta já foi no WhatsApp (ex.: "jb.ind"),
 // e "zap" troca a linha do envio (pela confirmação, por exemplo).
-function teclado(destino, grupo, { comArte = false, enviados = '', zap } = {}) {
+// "fundo": 'tirar' mostra "✂️ Tirar fundo", 'voltar' mostra "↩️ Voltar o fundo" (arte de uma imagem só).
+function teclado(destino, grupo, { comArte = false, enviados = '', zap, fundo = '' } = {}) {
   const marca = (ativo, txt) => (ativo ? '✅ ' : '') + txt;
   const linhas = [
     [
@@ -68,6 +70,8 @@ function teclado(destino, grupo, { comArte = false, enviados = '', zap } = {}) {
     ]
   ];
   if (comArte) linhas.push([{ text: '🖼 Gerar arte', callback_data: `arte|${destino}|${grupo}` }]);
+  if (fundo === 'tirar' && removeBgLigado()) linhas.push([{ text: '✂️ Tirar fundo', callback_data: `fundo|${destino}|${grupo}` }]);
+  if (fundo === 'voltar') linhas.push([{ text: '↩️ Voltar o fundo', callback_data: `comfundo|${destino}|${grupo}` }]);
   if (zap) linhas.push(zap);
   else if (sendflowLigado() && GRUPOS[grupo]) {
     const fim = `|${destino}|${grupo}|${enviados}`;
@@ -80,6 +84,13 @@ function teclado(destino, grupo, { comArte = false, enviados = '', zap } = {}) {
 
 const botoes = markup => ((markup && markup.inline_keyboard) || []).flat();
 const temBotaoArte = markup => botoes(markup).some(b => (b.callback_data || '').startsWith('arte|'));
+// Botão do fundo que a arte tem agora ('tirar', 'voltar' ou '')
+function fundoDe(markup) {
+  const b = botoes(markup).find(x => /^(com)?fundo\|/.test(x.callback_data || ''));
+  return !b ? '' : b.callback_data.startsWith('com') ? 'voltar' : 'tirar';
+}
+// Arte com uma imagem só (foto, banco ou link) pode ter o fundo tirado
+const umaImagem = arte => ['foto', 'banco', 'link'].includes(arte && arte.imagem);
 // Grupos do WhatsApp pra onde a oferta já foi, lidos do botão de envio
 function enviadosDe(markup) {
   const b = botoes(markup).find(x => (x.callback_data || '').startsWith('zap'));
@@ -279,14 +290,14 @@ async function avisarFotoPequena(msg, chatId) {
 
 // Manda a arte respondendo à oferta original. Se o texto não couber na legenda,
 // a arte vai sozinha e o texto (com os botões) numa mensagem logo depois.
-async function responderComArte(original, png, destino, grupo, resposta) {
+async function responderComArte(original, png, destino, grupo, resposta, fundo = '') {
   const { saida, parse_mode, falhas } = await montar(original, destino, grupo, resposta);
   const chat_id = original.chat.id;
   const reply_parameters = { message_id: original.message_id, allow_sending_without_reply: true };
   // Devolve a mensagem da arte com a legenda e os botões, para um álbum poder refazê-la
   let arte;
   if (saida.length <= LIMITE_LEGENDA) {
-    const reply_markup = teclado(destino, grupo);
+    const reply_markup = teclado(destino, grupo, { fundo });
     const m = await enviarFoto({ chat_id, caption: saida, parse_mode, reply_markup, reply_parameters }, png);
     arte = { message_id: m.message_id, caption: saida, parse_mode, reply_markup };
   } else {
@@ -373,7 +384,7 @@ async function novaOferta(msg, album) {
     const opcoes = ids.length ? { fotos: await baixarFotos(ids) } : {};
     const arte = await tentarArte(msg, c.texto, c.entities, grupo, opcoes);
     if (arte && arte.png) {
-      const enviada = await responderComArte(msg, arte.png, destino, grupo);
+      const enviada = await responderComArte(msg, arte.png, destino, grupo, undefined, umaImagem(arte) ? 'tirar' : '');
       if (album) {
         album.usadas = ids.length;
         album.refazer = refazerAlbum(album, msg, c.texto, c.entities, grupo, {}, enviada);
@@ -410,8 +421,32 @@ async function arte(cb, original, destino, grupo) {
     await tg('sendMessage', { chat_id: cb.message.chat.id, text: 'Não consegui gerar a arte dessa oferta.' });
     return;
   }
-  await responderComArte(original, arte.png, destino, grupo, cb.message);
+  await responderComArte(original, arte.png, destino, grupo, cb.message, umaImagem(arte) ? 'tirar' : '');
   if (arte.imagem === 'colagem') await avisarColagem(original, arte);
+}
+
+// "✂️ Tirar fundo" refaz a arte com a imagem recortada pelo remove.bg; "↩️ Voltar o fundo"
+// refaz com a imagem como veio. Troca a imagem da própria arte (legenda e botões seguem)
+async function fundo(cb, original, acao, destino, grupo) {
+  const tirar = acao === 'fundo';
+  const resposta = cb.message;
+  await tg('answerCallbackQuery', { callback_query_id: cb.id, text: tirar ? 'Tirando o fundo...' : 'Voltando o fundo...' });
+  const c = conteudo(original);
+  let erro = null;
+  const recortar = async capa => {
+    try { return await tirarFundo(capa); } catch (e) { erro = e; throw e; }
+  };
+  const arte = await tentarArte(original, c.texto, c.entities, grupo, tirar ? { recortar } : {});
+  if (!arte || !arte.png) {
+    await tg('sendMessage', { chat_id: resposta.chat.id, text: erro ? 'Não consegui tirar o fundo: ' + erro.message + '.' : 'Não consegui refazer a arte.' });
+    return;
+  }
+  const opcoes = { enviados: enviadosDe(resposta.reply_markup), fundo: tirar ? 'voltar' : 'tirar' };
+  await trocarFoto({
+    chat_id: resposta.chat.id, message_id: resposta.message_id,
+    caption: resposta.caption, caption_entities: resposta.caption_entities,
+    reply_markup: teclado(destino, grupo, opcoes)
+  }, arte.png);
 }
 
 // Você respondeu a uma mensagem do bot com uma foto: refaz a arte com essa foto como capa
@@ -439,7 +474,9 @@ async function trocarCapa(msg, album) {
   let enviada;
   if (base.photo) {
     // Troca a imagem da própria arte: a legenda e os botões continuam funcionando
-    enviada = { message_id: base.message_id, caption: legenda, caption_entities: entities.length ? entities : undefined, reply_markup: base.reply_markup };
+    // Sem o botão do fundo: ele recortaria a imagem da oferta, não a foto que você mandou
+    const reply_markup = base.reply_markup && { inline_keyboard: base.reply_markup.inline_keyboard.filter(l => !l.some(b => /^(com)?fundo\|/.test(b.callback_data || ''))) };
+    enviada = { message_id: base.message_id, caption: legenda, caption_entities: entities.length ? entities : undefined, reply_markup };
     await trocarFoto({ chat_id: msg.chat.id, ...enviada }, png);
   } else {
     const cabe = legenda.length <= LIMITE_LEGENDA;
@@ -463,7 +500,7 @@ async function zap(cb, partes, original, host) {
   const resposta = cb.message;
   const chat_id = resposta.chat.id;
   const avisar = (text, show_alert = false) => tg('answerCallbackQuery', { callback_query_id: cb.id, text, show_alert });
-  const opcoes = { comArte: temBotaoArte(resposta.reply_markup), enviados };
+  const opcoes = { comArte: temBotaoArte(resposta.reply_markup), enviados, fundo: fundoDe(resposta.reply_markup) };
   const trocarTeclado = reply_markup => tg('editMessageReplyMarkup', { chat_id, message_id: resposta.message_id, reply_markup });
   const nome = GRUPOS[grupo] ? GRUPOS[grupo].nome : grupo;
 
@@ -566,7 +603,8 @@ async function statusBanco(chatId, busca) {
 async function botao(cb, host) {
   const partes = (cb.data || '').split('|');
   const ehArte = partes[0] === 'arte';
-  const [destino, grupo] = ehArte ? partes.slice(1) : partes;
+  const ehFundo = partes[0] === 'fundo' || partes[0] === 'comfundo';
+  const [destino, grupo] = ehArte || ehFundo ? partes.slice(1) : partes;
   const resposta = cb.message;
   const original = resposta && resposta.reply_to_message;
   if (!original || !conteudo(original)) {
@@ -575,9 +613,10 @@ async function botao(cb, host) {
   }
   if (partes[0].startsWith('zap')) return zap(cb, partes, original, host);
   if (ehArte) return arte(cb, original, destino, grupo);
+  if (ehFundo) return fundo(cb, original, partes[0], destino, grupo);
   const { saida, parse_mode } = await montar(original, destino, grupo, resposta);
   // Mantém o botão "Gerar arte" só onde ele já estava, e lembra pra quais grupos já foi
-  const opcoes = { comArte: temBotaoArte(resposta.reply_markup), enviados: enviadosDe(resposta.reply_markup) };
+  const opcoes = { comArte: temBotaoArte(resposta.reply_markup), enviados: enviadosDe(resposta.reply_markup), fundo: fundoDe(resposta.reply_markup) };
   const comum = { chat_id: resposta.chat.id, message_id: resposta.message_id, parse_mode, reply_markup: teclado(destino, grupo, opcoes) };
   // Arte trocando entre Jogo Barato e JB Indica: refaz a imagem no outro modelo
   if (resposta.photo && modeloDoGrupo(grupoMarcado(resposta.reply_markup)) !== modeloDoGrupo(grupo) && saida.length <= LIMITE_LEGENDA) {
@@ -585,7 +624,9 @@ async function botao(cb, host) {
     const c = conteudo(original);
     const arte = await tentarArte(original, c.texto, c.entities, grupo, await comFotosGuardadas(original, { semImagem: true }));
     if (arte && arte.png) {
-      await trocarFoto({ chat_id: comum.chat_id, message_id: comum.message_id, caption: saida, parse_mode, reply_markup: comum.reply_markup }, arte.png);
+      // A arte nova sai com o fundo da foto: o botão volta a ser "Tirar fundo" (sem gastar crédito sozinho)
+      const reply_markup = teclado(destino, grupo, { ...opcoes, fundo: opcoes.fundo && 'tirar' });
+      await trocarFoto({ chat_id: comum.chat_id, message_id: comum.message_id, caption: saida, parse_mode, reply_markup }, arte.png);
       return;
     }
   }
