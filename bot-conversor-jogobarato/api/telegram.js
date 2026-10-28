@@ -67,7 +67,8 @@ function teclado(destino, grupo, { comArte = false, enviados = '', zap, fundo = 
     [
       { text: marca(destino === 'wa', 'Para WhatsApp'), callback_data: `wa|${grupo}` },
       { text: marca(destino === 'tg', 'Para Telegram'), callback_data: `tg|${grupo}` }
-    ]
+    ],
+    [{ text: '📋 Copiar texto', callback_data: 'copiar' }]
   ];
   if (comArte) linhas.push([{ text: '🖼 Gerar arte', callback_data: `arte|${destino}|${grupo}` }]);
   if (fundo === 'tirar' && removeBgLigado()) linhas.push([{ text: '✂️ Tirar fundo', callback_data: `fundo|${destino}|${grupo}` }]);
@@ -600,8 +601,25 @@ async function statusBanco(chatId, busca) {
   await tg('sendMessage', { chat_id: chatId, text: linhas.join('\n') });
 }
 
+// "📋 Copiar texto": manda o texto da resposta num bloco de código, que o Telegram copia
+// inteiro num toque (o botão que copia direto só aceita até 256 caracteres)
+async function copiar(cb) {
+  const r = cb.message;
+  const texto = ((r && (typeof r.caption === 'string' ? r.caption : r.text)) || '').slice(0, LIMITE_TEXTO);
+  if (!texto.trim()) {
+    await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Essa mensagem não tem texto pra copiar.', show_alert: true });
+    return;
+  }
+  await tg('answerCallbackQuery', { callback_query_id: cb.id, text: 'Toque no bloco pra copiar' });
+  await tg('sendMessage', {
+    chat_id: r.chat.id, text: texto, entities: [{ type: 'pre', offset: 0, length: texto.length }],
+    reply_parameters: { message_id: r.message_id, allow_sending_without_reply: true }
+  });
+}
+
 async function botao(cb, host) {
   const partes = (cb.data || '').split('|');
+  if (partes[0] === 'copiar') return copiar(cb);
   const ehArte = partes[0] === 'arte';
   const ehFundo = partes[0] === 'fundo' || partes[0] === 'comfundo';
   const [destino, grupo] = ehArte || ehFundo ? partes.slice(1) : partes;

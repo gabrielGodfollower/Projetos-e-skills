@@ -156,6 +156,8 @@ test('preço da arte segue o HTML: menor valor, sem cupom, frete nem parcela', a
     ['R$ 249,00\nFrete grátis acima de R$ 79', '249,00', 'parcelado'],
     ['R$ 99,90 em 3x ou R$ 89,90 no pix', '89,90', 'à vista'],
     ['A partir de R$ 1299 à vista', '1.299,00', 'à vista'],
+    // Parcelado mais barato que o Pix (Monitor Odyssey G5 no Mercado Livre): vale o Pix
+    ['🎟️ Cupom: VALETECH\n• R$ 2.877,55 no Pix\n• R$ 2.029,00 em até 10x\n• Frete Grátis', '2.877,55', 'à vista'],
     ['sem preço', '', 'parcelado']
   ];
   for (const [texto, preco, condicao] of casos) {

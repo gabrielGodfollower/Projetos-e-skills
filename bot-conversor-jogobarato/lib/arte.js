@@ -62,7 +62,9 @@ export function dadosDaOferta(texto) {
 // Preço da arte, com a regra do conversor em HTML do Jogo Barato: o menor valor
 // em R$ do texto, sem cupom, cashback e frete. A mais, aqui, fica de fora o valor
 // da parcela ("10x de R$ 29,99"), que no HTML virava o preço. Se o texto fala em
-// Pix ou à vista em qualquer lugar, é "à vista"; senão, "parcelado".
+// Pix ou à vista em qualquer lugar, é "à vista"; senão, "parcelado". Com um valor
+// numa linha de Pix ou à vista, vale o menor desses: "R$ 2.029,00 em até 10x" mais
+// barato que o Pix sairia como "à vista" com o valor do parcelado.
 const VALOR = /R\$\s*(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?/g;
 const A_VISTA = /(?:^|[^\wÀ-ú])(?:[àa]\s?vista|pix)(?![\wÀ-ú])/i;
 export function precoPrincipal(texto) {
@@ -75,12 +77,14 @@ export function precoPrincipal(texto) {
       || /^\s*(off|de desconto|de volta|cashback)/.test(depois)
       || /\d+\s*x\s*(de\s*)?$/.test(antes)) continue;
     const v = parseFloat(m[1].replace(/\./g, '') + '.' + (m[2] || '0').padEnd(2, '0'));
-    if (v > 0) valores.push(v);
+    const fimLinha = texto.indexOf('\n', m.index);
+    if (v > 0) valores.push({ v, avista: A_VISTA.test(texto.slice(iniLinha, fimLinha < 0 ? undefined : fimLinha)) });
   }
   const condicao = A_VISTA.test(texto) ? 'à vista' : 'parcelado';
   if (!valores.length) return { preco: '', condicao };
+  const noPix = valores.filter(x => x.avista);
   // Sempre com centavos e ponto no milhar: "R$ 1299" vira "1.299,00"
-  const [reais, centavos] = Math.min(...valores).toFixed(2).split('.');
+  const [reais, centavos] = Math.min(...(noPix.length ? noPix : valores).map(x => x.v)).toFixed(2).split('.');
   return { preco: reais.replace(/\B(?=(\d{3})+$)/g, '.') + ',' + centavos, condicao };
 }
 
