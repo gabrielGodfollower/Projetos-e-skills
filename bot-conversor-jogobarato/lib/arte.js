@@ -355,6 +355,8 @@ function camadasDaColagem(capas, A = COLAGEM_JB) {
 // Nesse modo saem os ícones das redes e o "JOGOBARA.TO/GRUPOS" (fundo-arte-cheia.png).
 export const CHEIA = {
   top: 160, bottom: 985, areaTop: 175, areaTopTitulo: 268, areaBottom: 972, proporcaoMin: 1.25, corteMax: 0.04,
+  // Sobra (px na arte) que ainda dá para cobrir com a cor do fundo quando a beirada tem desenho
+  sobraComDesenhoMax: 24,
   // Lado direito (inclinado) do quadro do preço no fundo: x 1165 na altura 870, 1153 na 972
   ladoDoPreco: { y: 870, y1: 972, x0: 1165, x1: 1153 }
 };
@@ -450,13 +452,16 @@ function painelCheio(capa, tipo, comTitulo) {
   // Um pedaço da borda da foto, espelhado e esticado para cobrir a sobra
   const tira = (x, y, w, h2, caixa, espelho) => (w > 0 && h2 > 0)
     ? `<svg x="${x}" y="${y}" width="${w}" height="${h2}" viewBox="${caixa}" preserveAspectRatio="none"><g transform="${espelho}">${img}</g></svg>` : '';
-  // Borda com desenho (um letreiro cortado, um logo) vira listras quando esticada: aí a
-  // sobra é a cor do fundo da borda, e a foto se funde nela aos poucos
+  // Borda com desenho (um letreiro cortado, um logo) vira listras quando esticada. Sobra
+  // fininha fica da cor do fundo da borda, com a foto se fundindo nela aos poucos; sobra
+  // grande assim não tem como disfarçar, e a arte volta para o quadro branco (o dono escolheu)
   const lisa = [], fusoes = [];
+  let naoEncaixa = false;
   const sobra = (x, y, w, h2, caixa, espelho, lado) => {
     if (w <= 0 || h2 <= 0) return '';
     const b = bordaDaFoto(img, caixa, t, lado === 'cima' || lado === 'baixo');
     if (!b.desenho) return tira(x, y, w, h2, caixa, espelho);
+    if ((lado === 'cima' || lado === 'baixo' ? h2 : w) > CHEIA.sobraComDesenhoMax) naoEncaixa = true;
     const n = lisa.length, F = 40, cor = b.cor;
     const g = { cima: [x0, y0, fw, F, '0 0 0 1'], baixo: [x0, y0 + fh - F, fw, F, '0 1 0 0'], esquerda: [x0, 0, F, H, '0 0 1 0'], direita: [x0 + fw - F, 0, F, H, '1 0 0 0'] }[lado];
     const [gx1, gy1, gx2, gy2] = g[4].split(' ');
@@ -471,6 +476,7 @@ function painelCheio(capa, tipo, comTitulo) {
     sobra(x0 + fw, 0, W - x0 - fw, H, `${i + cw - f} ${j} ${f} ${ch}`, `translate(${2 * (i + cw) - f},0) scale(-1,1)`, 'direita'),
     `<svg x="${x0}" y="${y0}" width="${fw}" height="${fh}" viewBox="${i} ${j} ${cw} ${ch}" preserveAspectRatio="none">${img}</svg>`
   ];
+  if (naoEncaixa) return null;
   if (lisa.length) partes.push(`<defs>${lisa.join('')}</defs>`, ...fusoes);
   const svg = () => `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">${partes.join('')}</svg>`;
   let r = new Resvg(svg()).render();
@@ -510,15 +516,17 @@ const JOGO_BARATO = {
   largura: LARGURA_JB, altura: 1000, fundo: png64('fundo-arte.png'),
   camadas({ titulo, preco, condicao, capa, tipo, capas, cheia }) {
     const c = [];
+    // A foto cheia volta para o quadro branco quando a foto não encaixa (painelCheio dá null)
+    const painel = !(capas && capas.length) && tipo && cheia ? painelCheio(capa, tipo, Boolean(titulo)) : null;
     if (capas && capas.length) c.push(...camadasDaColagem(capas));
-    else if (tipo && cheia) {
-      c.push({ type: 'img', props: { src: painelCheio(capa, tipo, Boolean(titulo)), width: LARGURA_JB, height: CHEIA.bottom - CHEIA.top, style: { position: 'absolute', left: 0, top: CHEIA.top } } });
+    else if (painel) {
+      c.push({ type: 'img', props: { src: painel, width: LARGURA_JB, height: CHEIA.bottom - CHEIA.top, style: { position: 'absolute', left: 0, top: CHEIA.top } } });
       c.push({ type: 'img', props: { src: FUNDO_CHEIA, width: LARGURA_JB, height: 1000, style: { position: 'absolute', left: 0, top: 0 } } });
     } else if (tipo) c.push(capaImg(capa, tipo, areaDoProduto(tamanhoImagem(capa))));
     if (titulo) {
       // Em cima da foto cheia o título sai em branco, com sombra para ler em qualquer fundo
       const T = LAYOUT_JB.titulo, tam = tamanhoQueCabe(T.fonte, titulo, T.tam, T.larguraMax);
-      const cor = cheia && tipo ? { color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.85)' } : { color: T.cor };
+      const cor = painel ? { color: '#fff', textShadow: '0 1px 4px rgba(0,0,0,0.85)' } : { color: T.cor };
       c.push(naBase(titulo, { left: T.x, ...cor, fontFamily: 'Baloo', fontWeight: 500, tam, linhaDeBase: T.base, base: medir(T.fonte, titulo, tam).base }));
     }
     if (preco) {
