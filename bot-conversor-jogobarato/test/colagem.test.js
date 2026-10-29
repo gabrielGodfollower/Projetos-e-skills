@@ -263,6 +263,10 @@ test('foto larga com fundo próprio ocupa o quadro inteiro; capa e foto em fundo
   const barras = Array.from({ length: 35 }, (_, n) => `<rect x="${n * 40}" width="12" height="60" fill="#d8b060"/>`).join('');
   const letreiro = png(1400, 700, `<rect width="1400" height="700" fill="#3a1010"/>${barras}`);
   assert.deepEqual(pixel(await gerarArte({ titulo: '', preco: '1,00', capa: letreiro }), 10, 500), [255, 255, 255]);
+  // Degradê com uma linha fina na beirada continua bonito esticado: foto cheia
+  const degrade = png(1400, 700, '<defs><linearGradient id="g"><stop offset="0" stop-color="#7a0a04"/><stop offset="1" stop-color="#e8641a"/></linearGradient></defs><rect width="1400" height="700" fill="url(#g)"/><rect x="700" width="3" height="120" fill="#f0d0a0"/>');
+  const [dr, dg, db] = pixel(await gerarArte({ titulo: 'Dawnwalker', preco: '1,00', capa: degrade }), 10, 500);
+  assert.ok(db < 100 && dr > 90, `degradê (10,500) ${[dr, dg, db]}`);
   const barras2 = Array.from({ length: 30 }, (_, n) => `<rect x="${n * 40}" width="12" height="60" fill="#d8b060"/>`).join('');
   const quase = png(1200, 770, `<rect width="1200" height="770" fill="#3a1010"/>${barras2}`);
   const comQuase = await gerarArte({ titulo: '', preco: '1,00', capa: quase });

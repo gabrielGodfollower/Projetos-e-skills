@@ -419,14 +419,20 @@ function bordaDaFoto(img, caixa, t, deitada) {
   const canais = [[], [], []];
   for (let o = 0; o < d.length; o += 4) for (let c = 0; c < 3; c++) canais[c].push(d[o + c]);
   const med = canais.map(v => v.slice().sort((a, b) => a - b)[v.length >> 1]);
-  let fora = 0;
-  for (let p = 0; p < canais[0].length; p++) {
-    if (Math.abs(canais[0][p] - med[0]) + Math.abs(canais[1][p] - med[1]) + Math.abs(canais[2][p] - med[2]) > 90) fora++;
-  }
   const cor = '#' + med.map(v => v.toString(16).padStart(2, '0')).join('');
-  return { cor, desenho: fora / canais[0].length > LIMITE_DESENHO };
+  // Esticada, a tira vira listras onde a cor muda de repente ao longo dela (letra, logo
+  // cortado). Degradê e uma linha fina continuam bonitos esticados
+  const n = deitada ? w : h2, k = deitada ? h2 : w, perfil = [];
+  for (let a = 0; a < n; a++) {
+    const m = [0, 0, 0];
+    for (let b = 0; b < k; b++) { const o = ((deitada ? b * w + a : a * w + b)) * 4; for (let c = 0; c < 3; c++) m[c] += d[o + c] / k; }
+    perfil.push(m);
+  }
+  let saltos = 0;
+  for (let a = 2; a < n; a++) if (Math.abs(perfil[a][0] - perfil[a - 2][0]) + Math.abs(perfil[a][1] - perfil[a - 2][1]) + Math.abs(perfil[a][2] - perfil[a - 2][2]) > 60) saltos++;
+  return { cor, desenho: saltos / n > LIMITE_DESENHO };
 }
-const LIMITE_DESENHO = 0.1;
+const LIMITE_DESENHO = 0.06;
 
 // O painel da foto (1200 x 825, de y 160 a 985), desenhado à parte em PNG.
 // "comTitulo": a foto começa abaixo do título, que fica legível sobre a borda esticada
