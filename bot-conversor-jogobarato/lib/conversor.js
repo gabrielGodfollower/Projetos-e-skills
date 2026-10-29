@@ -99,8 +99,26 @@ function juntarPedacos(texto, entities) {
       } else juntas.push(e);
     }
   }
-  return [...outras, ...juntas];
+  return [...outras, ...juntas.flatMap(e => porLinha(texto, e))];
 }
+
+// O WhatsApp não aceita negrito (ou itálico, tachado) que passa de uma linha para outra:
+// "*Título\n\nNome*" sai com os asteriscos aparecendo. Cada linha leva o seu
+function porLinha(texto, e) {
+  const fim = e.offset + e.length;
+  if (!texto.slice(e.offset, fim).includes('\n')) return [e];
+  const pedacos = [];
+  let ini = e.offset;
+  while (ini < fim) {
+    const nl = texto.indexOf('\n', ini);
+    const ate = nl < 0 || nl >= fim ? fim : nl;
+    // Linha com link fica sem a marca: colada no link, ela estraga o link no WhatsApp
+    if (ate > ini && !LINK_NA_LINHA.test(texto.slice(ini, ate))) pedacos.push({ ...e, offset: ini, length: ate - ini });
+    ini = ate + 1;
+  }
+  return pedacos;
+}
+const LINK_NA_LINHA = /https?:\/\/|\b[\w-]+\.(to|com|br|ly)\/\S/i;
 
 export function entitiesPara(destino, texto, entities = []) {
   const wa = destino === 'wa';

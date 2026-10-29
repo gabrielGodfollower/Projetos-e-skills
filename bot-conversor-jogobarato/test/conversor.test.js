@@ -208,3 +208,10 @@ test('texto do zap com itálico dentro do negrito e negrito em pedaços vira Tel
   // Separados por palavra continuam separados
   assert.equal(entitiesPara('wa', 'um dois três', [{ type: 'bold', offset: 0, length: 2 }, { type: 'bold', offset: 8, length: 4 }]), '*um* dois *três*');
 });
+
+test('negrito de várias linhas vira um por linha no WhatsApp, sem pegar a linha do link', () => {
+  const t = '[Amazon] Jogos\n\nFinal Fantasy (Switch 2)\n👉 https://jogobara.to/zLtkl\n🎟 Cupom: PRIME\n• R$ 233,92 no Pix';
+  const fim = t.indexOf('Cupom:') + 6;
+  assert.equal(entitiesPara('wa', t, [{ type: 'bold', offset: 0, length: fim }]),
+    '*[Amazon] Jogos*\n\n*Final Fantasy (Switch 2)*\n👉 https://jogobara.to/zLtkl\n*🎟 Cupom:* PRIME\n• R$ 233,92 no Pix');
+});

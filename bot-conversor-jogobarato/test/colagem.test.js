@@ -151,6 +151,42 @@ test('álbum: as fotos que chegam juntas viram uma arte só, com todas', async (
   }
 });
 
+test('mais de 10 fotos: o álbum sem texto entra na arte do álbum com texto', async () => {
+  const cor = png(300, 200, '<rect width="300" height="200" fill="#c00"/>');
+  const chamadas = [], baixadas = new Set();
+  const fetchOriginal = globalThis.fetch;
+  process.env.TELEGRAM_BOT_TOKEN = 'teste';
+  globalThis.fetch = async (url, op = {}) => {
+    url = String(url);
+    if (!url.startsWith('https://api.telegram.org/')) return fetchOriginal(url, op);
+    if (url.includes('/file/bot')) { baixadas.add(url.split('/').pop()); return new Response(cor); }
+    const metodo = url.split('/').pop();
+    const corpo = op.body instanceof FormData ? {} : JSON.parse(op.body || '{}');
+    if (metodo === 'getFile') return new Response(JSON.stringify({ ok: true, result: { file_path: corpo.file_id } }));
+    chamadas.push(metodo);
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 99 } }));
+  };
+  try {
+    const { default: handler } = await import('../api/telegram.js');
+    const res = { status() { return this; }, send() { return this; } };
+    const chat = { id: 8, type: 'private' }, from = { id: 8 };
+    const foto = id => [{ file_id: id, width: 300, height: 200 }];
+    const enviar = message => handler({ method: 'POST', headers: {}, body: { message } }, res);
+    const primeiro = Promise.all(['A', 'B', 'C'].map((id, n) => enviar({ message_id: n + 1, chat, from, media_group_id: 'g1', photo: foto(id) })));
+    await new Promise(r => setTimeout(r, 1800));
+    await Promise.all([
+      enviar({ message_id: 4, chat, from, media_group_id: 'g2', photo: foto('D'), caption: 'Jogos em promoção\nR$ 99,90 no Pix', caption_entities: [] }),
+      enviar({ message_id: 5, chat, from, media_group_id: 'g2', photo: foto('E') }),
+      primeiro
+    ]);
+    assert.deepEqual(chamadas, ['sendPhoto']);
+    assert.deepEqual([...baixadas].sort(), ['A', 'B', 'C', 'D', 'E']);
+  } finally {
+    globalThis.fetch = fetchOriginal;
+    delete process.env.TELEGRAM_BOT_TOKEN;
+  }
+});
+
 test('fotos de um álbum valem mais que o banco e viram colagem', async () => {
   const { arteDaOferta } = await import('../lib/capas.js');
   const a = png(300, 200, '<rect width="300" height="200" fill="#c00"/>');

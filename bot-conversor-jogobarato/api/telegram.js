@@ -252,6 +252,17 @@ function refazerAlbum(a, msg, texto, entities, grupo, opcoes, arte) {
   }).catch(e => console.error(e)));
 }
 
+const ESPERA_OUTRO_ALBUM = 8000;
+// Álbuns sem texto do mesmo chat mandados logo antes entram na mesma arte, antes das fotos deste
+function juntarAlbunsSemTexto(chat, a) {
+  for (const [k, outro] of ALBUNS) {
+    if (outro === a || !k.startsWith(chat + ':') || outro.oferta || outro.resposta || outro.juntado) continue;
+    if (Math.abs(a.criado - outro.criado) > 20000) continue;
+    outro.juntado = true;
+    for (const [id, f] of outro.fotos) a.fotos.set(id, f);
+  }
+}
+
 async function fotoDeAlbum(msg) {
   const a = albumDe(msg);
   a.fotos.set(msg.message_id, msg.photo[msg.photo.length - 1].file_id);
@@ -265,6 +276,23 @@ async function fotoDeAlbum(msg) {
   a.lider = msg.message_id;
   // Espera as outras fotos: até passar 1,2 s sem chegar nenhuma (no máximo 4 s)
   while (Date.now() - a.ultima < 1200 && Date.now() - a.criado < 4000) await dormir(200);
+  // Mais de 10 fotos: o Telegram divide em álbuns de até 10, e o texto vai num só.
+  // O álbum sem texto espera um pouco o que tem texto, que junta as fotos dele
+  if (!a.oferta && !a.resposta) {
+    const ate = Date.now() + ESPERA_OUTRO_ALBUM;
+    while (!a.juntado && !a.oferta && !a.resposta && Date.now() < ate) {
+      // O álbum com texto chegou antes e a arte já saiu: entra nela e refaz
+      const comTexto = [...ALBUNS].find(([k, o]) => o !== a && k.startsWith(msg.chat.id + ':') && o.oferta && o.refazer && Math.abs(o.criado - a.criado) <= 20000);
+      if (comTexto) {
+        a.juntado = true;
+        for (const [id, f] of a.fotos) comTexto[1].fotos.set(id, f);
+        return comTexto[1].refazer();
+      }
+      await dormir(200);
+    }
+    if (a.juntado) return;
+  }
+  if (a.oferta) juntarAlbunsSemTexto(msg.chat.id, a);
   if (a.oferta) await novaOferta(a.oferta, a);
   else if (a.resposta) await trocarCapa(a.resposta, a);
   else await tg('sendMessage', { chat_id: msg.chat.id, text: 'Mande uma oferta com texto (ou a foto da capa com a oferta na legenda) que eu converto.' });
