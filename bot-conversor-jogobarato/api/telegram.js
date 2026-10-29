@@ -206,7 +206,8 @@ async function tentarArte(msg, texto, entities, grupo, opcoes = {}) {
 // tempo, e só uma delas traz o texto. Sem banco de dados, o bot junta as fotos na
 // memória da função pelo media_group_id: a primeira mensagem que chega espera as
 // outras e faz uma arte só, com todas as fotos. Foto que chega depois da arte pronta
-// refaz a arte. Se as mensagens caírem em instâncias diferentes da Vercel, a arte sai
+// refaz a arte. O vercel.json liga o "fluid", que deixa uma instância atender várias
+// mensagens ao mesmo tempo; se mesmo assim caírem em instâncias diferentes, a arte sai
 // com a foto que veio com o texto, como antes.
 const ALBUNS = new Map();
 const VIDA_ALBUM = 30 * 60 * 1000;
@@ -258,7 +259,7 @@ function juntarAlbunsSemTexto(chat, a) {
   for (const [k, outro] of ALBUNS) {
     if (outro === a || !k.startsWith(chat + ':') || outro.oferta || outro.resposta || outro.juntado) continue;
     if (Math.abs(a.criado - outro.criado) > 20000) continue;
-    outro.juntado = true;
+    outro.juntado = true; outro.destino = a;
     for (const [id, f] of outro.fotos) a.fotos.set(id, f);
   }
 }
@@ -267,6 +268,13 @@ async function fotoDeAlbum(msg) {
   const a = albumDe(msg);
   a.fotos.set(msg.message_id, msg.photo[msg.photo.length - 1].file_id);
   a.ultima = Date.now();
+  // Álbum que já entrou na arte de outro: a foto que chega depois vai para lá também
+  if (a.destino) {
+    a.destino.fotos.set(msg.message_id, msg.photo[msg.photo.length - 1].file_id);
+    a.destino.ultima = Date.now();
+    if (a.destino.refazer) return a.destino.refazer();
+    return;
+  }
   if (typeof msg.caption === 'string') a.oferta = msg;
   else if (msg.reply_to_message && msg.reply_to_message.from && msg.reply_to_message.from.is_bot) a.resposta = a.resposta || msg;
   // A arte já saiu: refaz com esta foto também
@@ -274,8 +282,9 @@ async function fotoDeAlbum(msg) {
   // Outra mensagem do álbum já está montando a arte
   if (a.lider) return;
   a.lider = msg.message_id;
-  // Espera as outras fotos: até passar 1,2 s sem chegar nenhuma (no máximo 4 s)
-  while (Date.now() - a.ultima < 1200 && Date.now() - a.criado < 4000) await dormir(200);
+  // Espera as outras fotos: até passar 2,5 s sem chegar nenhuma (no máximo 15 s, que 12
+  // fotos sobem devagar)
+  while (Date.now() - a.ultima < 2500 && Date.now() - a.criado < 15000) await dormir(200);
   // Mais de 10 fotos: o Telegram divide em álbuns de até 10, e o texto vai num só.
   // O álbum sem texto espera um pouco o que tem texto, que junta as fotos dele
   if (!a.oferta && !a.resposta) {
@@ -284,7 +293,7 @@ async function fotoDeAlbum(msg) {
       // O álbum com texto chegou antes e a arte já saiu: entra nela e refaz
       const comTexto = [...ALBUNS].find(([k, o]) => o !== a && k.startsWith(msg.chat.id + ':') && o.oferta && o.refazer && Math.abs(o.criado - a.criado) <= 20000);
       if (comTexto) {
-        a.juntado = true;
+        a.juntado = true; a.destino = comTexto[1];
         for (const [id, f] of a.fotos) comTexto[1].fotos.set(id, f);
         return comTexto[1].refazer();
       }

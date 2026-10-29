@@ -1,8 +1,15 @@
 {
+  "fluid": true,
   "functions": {
-    "api/telegram.js": { "maxDuration": 60, "includeFiles": "assets/**" }
+    "api/telegram.js": {
+      "maxDuration": 60,
+      "includeFiles": "assets/**"
+    }
   },
   "rewrites": [
-    { "source": "/arte/:s/:f", "destination": "/api/imagem?s=:s&f=:f" }
+    {
+      "source": "/arte/:s/:f",
+      "destination": "/api/imagem?s=:s&f=:f"
+    }
   ]
 }
