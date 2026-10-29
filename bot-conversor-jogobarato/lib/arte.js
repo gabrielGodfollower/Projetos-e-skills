@@ -255,12 +255,12 @@ const PROPORCAO_PS5 = 0.8; // largura ÷ altura de uma caixa de jogo de PS5
 export function slotsColagem(proporcoes, A = COLAGEM_JB) {
   const n = proporcoes.length;
   if (!n) return [];
-  // Espaço entre as capas (um pouco maior quando são só duas)
-  const gap = n === 2 ? 48 : 28;
+  // Espaço entre as capas: maior quando são só duas, menor com muitas (como o 17.html)
+  const gap = n === 2 ? 48 : n > 8 ? 18 : n > 4 ? 22 : 28;
   const indices = proporcoes.map((_, i) => i);
   const arranjo = prop => {
     let melhor = null;
-    for (let linhas = 1; linhas <= Math.min(n > 4 ? 3 : 2, n); linhas++) {
+    for (let linhas = 1; linhas <= Math.min(n > 6 ? 3 : 2, n); linhas++) {
       const cols = Math.ceil(n / linhas);
       const grupos = [];
       for (let l = 0; l < linhas; l++) grupos.push(indices.slice(l * cols, (l + 1) * cols));
@@ -277,6 +277,8 @@ export function slotsColagem(proporcoes, A = COLAGEM_JB) {
   // estreitas (Switch) não ficarem maiores que o normal. Duas: 80% do máximo
   if (n === 3) h = Math.min(h, arranjo(() => PROPORCAO_PS5).h);
   if (n === 2) h = Math.min(h, arranjo(() => PROPORCAO_PS5).h) * 0.8;
+  // De 5 a 8 capas em fileiras, 10% menores; com 9 ou mais, no tamanho máximo
+  if (linhas >= 2 && n <= 8) h *= 0.9;
   const topo = A.y + A.h / 2 - (linhas * h + (linhas - 1) * gap) / 2;
   const slots = [];
   grupos.forEach((g, l) => {

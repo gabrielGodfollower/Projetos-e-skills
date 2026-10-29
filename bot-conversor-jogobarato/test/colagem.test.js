@@ -59,7 +59,7 @@ test('banco de capas: lê o nome do arquivo e prefere a plataforma e o país cer
   assert.equal(escolher('Controle DualSense Branco'), undefined);
 });
 
-test('colagem: mesmas posições do 25.html', () => {
+test('colagem: mesmas posições do 17.html', () => {
   const r = s => s.map(o => [o.x, o.y, o.w, o.h].map(Math.round));
   // Switch 2 + PS5: duas capas a 80% do máximo, 48 px entre elas
   assert.deepEqual(r(slotsColagem([0.618, 0.78])), [[212, 333, 287, 464], [546, 333, 362, 464]]);
@@ -67,7 +67,10 @@ test('colagem: mesmas posições do 25.html', () => {
   assert.deepEqual(r(slotsColagem([0.618, 0.78, 0.78])), [[95, 364, 248, 402], [371, 364, 313, 402], [712, 364, 313, 402]]);
   assert.deepEqual(r(slotsColagem([0.618, 0.78, 0.78, 0.618])).map(s => s[0]), [50, 285, 574, 863]);
   // Imagens largas vão para duas fileiras
-  assert.deepEqual(r(slotsColagem([1.5, 1.5, 1.5])).map(s => s[1]), [275, 275, 579]);
+  // Em fileiras (de 5 a 8 capas, ou largas), 10% menores
+  assert.deepEqual(r(slotsColagem([1.5, 1.5, 1.5])).map(s => s[1]), [303, 303, 579]);
+  assert.equal(r(slotsColagem(Array(12).fill(0.8))).length, 12);
+  assert.ok(r(slotsColagem(Array(12).fill(0.8))).every(([x, y, w, h]) => x >= 50 && y >= 275 && x + w <= 1071 && y + h <= 856));
 });
 
 const png = (w, h, corpo) => new Resvg(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">${corpo}</svg>`).render().asPng();
