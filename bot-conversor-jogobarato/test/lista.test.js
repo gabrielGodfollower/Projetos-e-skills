@@ -142,3 +142,13 @@ test('título de pré-venda no padrão do Jogo Barato', async () => {
   // Acento separado e hífen diferente, como vem de cópia
   assert.equal(preVenda('(Pre\u0301\u2011venda) Controle \u2013 Edição'), 'Pré-venda do Controle Edição!');
 });
+
+test('banco: número e algarismo romano decidem a continuação, e preço não entra no nome', async () => {
+  const { analisarArquivo, consultaDe, buscarNoBanco } = await import('../lib/banco.js');
+  const arquivos = ['FIFA 23 (PS5) (BR).png', 'FIFA 24 (PS5) (BR).png', 'The Last of Us Part I (PS5) (BR).png',
+    'The Last of Us Part II (PS5) (BR).png', 'Dragons Dogma 2 (PS5) (BR).png'].map((name, i) => analisarArquivo({ id: 'f' + i, name }));
+  const achar = linha => buscarNoBanco(arquivos, consultaDe(linha)).map(x => x.f.arquivo);
+  assert.deepEqual(achar('FIFA 24 (PS5)'), ['FIFA 24 (PS5) (BR).png']);
+  assert.deepEqual(achar('The Last of Us Part 2 (PS5)'), ['The Last of Us Part II (PS5) (BR).png']);
+  assert.deepEqual(achar('Dragons Dogma II (PS5) R$ 199,90 -40%'), ['Dragons Dogma 2 (PS5) (BR).png']);
+});

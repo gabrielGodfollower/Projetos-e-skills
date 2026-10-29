@@ -36,6 +36,8 @@ export function analisarArquivo(f) {
 // O que procurar: o nome do produto (sem loja, links e parênteses), a plataforma e o
 // país pedido, entre parênteses no nome ou no texto ("versão americana")
 export function consultaDe(linha, contexto = '') {
+  // Preços e porcentagens não fazem parte do nome do jogo
+  linha = linha.replace(/R\$\s*[\d.,]+/g, ' ').replace(/\d+([.,]\d+)?\s*%/g, ' ');
   linha = linha.replace(/[*_~`]/g, '').replace(/^\s*\[[^\]]*\]\s*/, '').replace(/https?:\/\/\S+/g, ' ');
   let regiao = '';
   const grupos = [...linha.matchAll(/[(\[]([^()\[\]]+)[)\]]/g)].map(m => m[1].trim());
@@ -48,7 +50,9 @@ export function consultaDe(linha, contexto = '') {
     else if (/vers[a]o\s+(brasileira|nacional)\b/.test(t)) regiao = 'BR';
     else if (/vers[a]o\s+latam\b|\blatino[- ]americana\b/.test(t)) regiao = 'LATAM';
   }
-  let nome = linha.replace(/[(\[][^()\[\]]*[)\]]/g, ' ');
+  // Tira do nome só os trechos entre parênteses/colchetes que são país ou plataforma;
+  // os outros ("[I-III]", "(Special Edition)") continuam valendo na comparação
+  let nome = linha.replace(/[(\[]([^()\[\]]*)[)\]]/g, (m, g) => (REGIOES.includes(g.trim().toUpperCase()) || plataformasEm(g).length ? ' ' : ' ' + g + ' '));
   let plat = '';
   // A versão de cada produto vem por último: "(PS4 / PS5) (PS4)" → PS4. Grupos com várias plataformas não decidem.
   for (const g of grupos.slice().reverse()) {
@@ -62,8 +66,22 @@ export function consultaDe(linha, contexto = '') {
   return { nome: nome.trim(), tokens: palavras(nome), plat, regiao };
 }
 
+// Números e algarismos romanos identificam a continuação de um jogo ("Part I" ≠ "Part II", "FIFA 23" ≠ "FIFA 24")
+const ROMANOS = { i: 1, ii: 2, iii: 3, iv: 4, v: 5, vi: 6, vii: 7, viii: 8, ix: 9, x: 10, xi: 11, xii: 12, xiii: 13, xiv: 14, xv: 15, xvi: 16 };
+function numerosDe(tokens) {
+  const n = new Set();
+  tokens.forEach(t => {
+    if (/^\d+$/.test(t)) n.add(String(parseInt(t, 10)));
+    else if (ROMANOS[t]) n.add(String(ROMANOS[t]));
+  });
+  return [...n].sort().join(',');
+}
+// "2" e "II" contam como a mesma palavra na comparação
+const normalizarNumeros = tokens => tokens.map(t => (ROMANOS[t] ? String(ROMANOS[t]) : /^\d+$/.test(t) ? String(parseInt(t, 10)) : t));
+
 // Semelhança entre os nomes: palavras em comum (0 a 1)
 function semelhanca(a, b) {
+  a = normalizarNumeros(a); b = normalizarNumeros(b);
   const A = new Set(a), B = new Set(b);
   if (!A.size || !B.size) return 0;
   let i = 0;
@@ -73,7 +91,9 @@ function semelhanca(a, b) {
 
 export function buscarNoBanco(arquivos, q) {
   if (!q.tokens.length) return [];
-  let c = arquivos.map(f => ({ f, s: semelhanca(q.tokens, f.tokens) })).filter(x => x.s >= 0.6);
+  const nq = numerosDe(q.tokens);
+  let c = arquivos.map(f => ({ f, s: semelhanca(q.tokens, f.tokens) }))
+    .filter(x => x.s >= 0.6 && numerosDe(x.f.tokens) === nq);
   if (q.plat) {
     const mesma = c.filter(x => x.f.plat === q.plat);
     c = mesma.length ? mesma : c.filter(x => !x.f.plat);
@@ -182,6 +202,8 @@ export async function capasDoCombo(nome, contexto = '') {
   for (const [i, parte] of partes.entries()) {
     const tentativas = [parte];
     if (i > 0) for (let k = 1; k <= base.length; k++) tentativas.push(base.slice(0, k).join(' ') + ' ' + parte);
+    // "Until Dawn 1" é o primeiro jogo, que no banco não tem número
+    else if (base.length && base.join(' ') !== parte) tentativas.push(base.join(' '));
     let melhor = null;
     for (const t of tentativas) {
       const q = consultaDe(t, contexto);

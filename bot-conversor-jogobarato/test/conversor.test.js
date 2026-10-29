@@ -131,10 +131,10 @@ test('título sem chamada em maiúsculas e sem loja no meio', async () => {
   const { dadosDaOferta } = await import('../lib/arte.js');
   const d = dadosDaOferta('AINDA DISPONÍVEL! [KaBuM!] Bundle Console PlayStation 5 Slim + 2 Jogos\n• R$ 3.999,00 em até 10x');
   assert.deepEqual([d.titulo, d.loja, d.preco, d.condicao], ['Bundle Console PlayStation 5 Slim + 2 Jogos', 'KaBuM!', '3.999,00', 'parcelado']);
-  assert.equal(dadosDaOferta('🚨 BAIXOU! Mario Kart World!').titulo, 'Mario Kart World!');
+  assert.equal(dadosDaOferta('🚨 BAIXOU! Mario Kart World!').titulo, 'Mario Kart World');
   assert.equal(dadosDaOferta('Pré-venda de Dragon’s Dogma 2 (PS5)').titulo, 'Pré-venda de Dragon’s Dogma 2 (PS5)');
   assert.equal(dadosDaOferta('GTA VI (PS5)').titulo, 'GTA VI (PS5)');
-  assert.equal(dadosDaOferta('GTA VI!').titulo, 'GTA VI!');
+  assert.equal(dadosDaOferta('GTA VI!').titulo, 'GTA VI');
 });
 
 test('lê o tamanho de PNG e JPEG', async () => {

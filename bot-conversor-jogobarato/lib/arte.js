@@ -53,7 +53,8 @@ export function dadosDaOferta(texto) {
   while ((chamada = titulo.match(/^[^\p{Ll}!]{1,40}!+\s*/u)) && /\p{Lu}/u.test(chamada[0]) && /\p{L}/u.test(titulo.slice(chamada[0].length))) {
     titulo = titulo.slice(chamada[0].length);
   }
-  titulo = titulo.replace(/^[^\p{L}\p{N}]+/u, '').replace(/\s{2,}/g, ' ').trim();
+  // Sem o "!" ou "." do fim, como o "Texto na imagem" automático do conversor em HTML
+  titulo = titulo.replace(/^[^\p{L}\p{N}]+/u, '').replace(/\s{2,}/g, ' ').trim().replace(/\s*[.!]+$/, '');
   if (/^(?:https?:\/\/|www\.)\S+$/i.test(titulo)) titulo = '';
   const { preco, condicao } = precoPrincipal(texto);
   return { titulo, loja, preco, condicao };
