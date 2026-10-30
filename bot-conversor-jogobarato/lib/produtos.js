@@ -39,12 +39,20 @@ const semLoja = t => t.replace(/^\s*\[[^\]]*\]\s*/, '').trim();
 function rotuloPlataforma(l) {
   const t = limparLinha(l).replace(RE_EMOJI_INICIO, '').trim();
   if (!t || t.length > 50 || /R\$|https?:|www\.|jogobara/i.test(t)) return null;
+  // "[PS5] Mercado Livre": plataforma entre colchetes seguida só do nome da loja
+  const comLoja = t.match(/^\[([^\]]+)\]\s*(.+)$/);
+  if (comLoja && ehLoja(comLoja[2])) {
+    const pl = acharPlataforma(comLoja[1]);
+    if (pl && (comLoja[1].replace(pl.trecho, '').match(/[A-Za-zÀ-ú]/g) || []).length < 3) return { ...pl, extra: '' };
+  }
   const sem = t.replace(/^\[|\]$/g, '').replace(/:$/, '').trim();
   const pl = acharPlataforma(sem);
   if (!pl) return null;
-  const resto = sem.replace(pl.trecho, ' ')
+  // "PS5 (Limited Edition)": o que está entre parênteses é a edição, não o nome de outro produto
+  const extra = ((sem.replace(pl.trecho, ' ').match(/\(([^()]*)\)/) || [])[1] || '').trim();
+  const resto = sem.replace(pl.trecho, ' ').replace(/\([^()]*\)/g, ' ')
     .replace(/pr[eé][\s-]?venda|lan[cç]amento|vers[aã]o|edi[cç][aã]o|m[ií]dia\s+f[ií]sica|f[ií]sic[ao]|digital|[-–—:()\[\]/|]/gi, ' ').trim();
-  return (resto.match(/[A-Za-zÀ-ú]/g) || []).length < 3 ? pl : null;
+  return (resto.match(/[A-Za-zÀ-ú]/g) || []).length < 3 ? { ...pl, extra: plataformasEm(extra).length ? '' : extra } : null;
 }
 
 function linhaDeNome(l) {
@@ -111,19 +119,20 @@ function versoesPorPlataforma(txt) {
   for (const b of blocos(txt)) {
     for (const l of b.split('\n')) {
       const rot = rotuloPlataforma(l);
-      if (rot) { pendentes.push(rot.trecho); continue; }
+      if (rot) { pendentes.push({ rotulo: rot.trecho, extra: rot.extra }); continue; }
       const m = limparLinha(l).replace(RE_EMOJI_INICIO, '').trim().match(/^([^:]{2,30}):\s*(https?:\/\/|www\.|jogobara\.to|\S+\.\S+\/)/i);
       if (!m) continue;
       const plat = acharPlataforma(m[1]);
-      if (plat && plat.trecho.length >= m[1].trim().length - 9) pendentes.push(m[1].trim());
+      if (plat && plat.trecho.length >= m[1].trim().length - 9) pendentes.push({ rotulo: m[1].trim(), extra: '' });
     }
     if (!pendentes.length || !/R\$\s*\d/.test(b)) continue;
     const p = precoDoBloco(b);
     if (!p) continue;
-    for (const rotulo of pendentes) {
+    for (const { rotulo, extra } of pendentes) {
       const id = acharPlataforma(rotulo).id;
       const atual = versoes.get(id);
-      if (!atual || p.valor < atual.valor) versoes.set(id, { nome: `${base} (${rotulo})`, ...p, bloco: b });
+      const nomeBase = extra && !semAcento(base.toLowerCase()).includes(semAcento(extra.toLowerCase())) ? `${base} ${extra}` : base;
+      if (!atual || p.valor < atual.valor) versoes.set(id, { nome: `${nomeBase} (${rotulo})`, ...p, bloco: b });
     }
     pendentes = [];
   }

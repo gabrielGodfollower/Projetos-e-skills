@@ -89,11 +89,23 @@ function semelhanca(a, b) {
   return 2 * i / (A.size + B.size);
 }
 
+// Palavras que não diferenciam um jogo de outro (edição, artigos…)
+const PALAVRAS_GENERICAS = new Set(('s the of a an and de da do das dos e o edition edicao edição deluxe standard complete completa completo ' +
+  'gold ultimate definitive definitiva special especial limited limitada collector collectors colecionador goty game year ' +
+  'remastered remaster bundle pack launch day one version versao jogo midia fisica digital ' +
+  // Marcas na frente do nome que quase ninguém escreve ("Spider-Man 2" é o "Marvel's Spider-Man 2")
+  'marvel disney tom clancy sid meier').split(' '));
+// Toda palavra "própria" do arquivo precisa estar no texto: "Assassin's Creed Mirage" não serve para "Assassin's Creed Shadows"
+function semPalavraEstranha(qTokens, fTokens) {
+  const Q = new Set(normalizarNumeros(qTokens));
+  return normalizarNumeros(fTokens).every(t => Q.has(t) || PALAVRAS_GENERICAS.has(t));
+}
+
 export function buscarNoBanco(arquivos, q) {
   if (!q.tokens.length) return [];
   const nq = numerosDe(q.tokens);
   let c = arquivos.map(f => ({ f, s: semelhanca(q.tokens, f.tokens) }))
-    .filter(x => x.s >= 0.6 && numerosDe(x.f.tokens) === nq);
+    .filter(x => x.s >= 0.6 && numerosDe(x.f.tokens) === nq && semPalavraEstranha(q.tokens, x.f.tokens));
   if (q.plat) {
     const mesma = c.filter(x => x.f.plat === q.plat);
     c = mesma.length ? mesma : c.filter(x => !x.f.plat);
