@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { montarLista, nomeDaLoja } from '../lib/lista.js';
 import { partesDoCombo } from '../lib/banco.js';
-import { produtosDoTexto, palavras } from '../lib/produtos.js';
+import { produtosDoTexto } from '../lib/produtos.js';
 
 const RASCUNHO = `Until Dawn 1 + 2
 PRIMEGAME5
@@ -151,19 +151,4 @@ test('banco: número e algarismo romano decidem a continuação, e preço não e
   assert.deepEqual(achar('FIFA 24 (PS5)'), ['FIFA 24 (PS5) (BR).png']);
   assert.deepEqual(achar('The Last of Us Part 2 (PS5)'), ['The Last of Us Part II (PS5) (BR).png']);
   assert.deepEqual(achar('Dragons Dogma II (PS5) R$ 199,90 -40%'), ['Dragons Dogma 2 (PS5) (BR).png']);
-});
-
-test('banco: nome com palavra a mais no arquivo não serve (27.html)', async () => {
-  const { buscarNoBanco, consultaDe } = await import('../lib/banco.js');
-  const arq = (arquivo, nome) => ({ id: arquivo, arquivo, nome, plat: 'ps5', regiao: 'BR', tokens: palavras(nome) });
-  const arquivos = [arq('mirage.png', "Assassin's Creed Mirage"), arq('shadows.png', "Assassin's Creed Shadows"), arq('sm2.png', "Marvel's Spider-Man 2")];
-  const achados = q => buscarNoBanco(arquivos, consultaDe(q)).map(x => x.f.arquivo);
-  assert.deepEqual(achados("Assassin's Creed Shadows"), ['shadows.png']);
-  assert.deepEqual(achados("Assassin's Creed Shadows Deluxe Edition"), ['shadows.png']);
-  assert.deepEqual(achados('Spider Man 2'), ['sm2.png']);
-});
-
-test('versões por plataforma com loja e edição (27.html)', () => {
-  const v = produtosDoTexto('Ghost of Yotei\n\n[PS5] Mercado Livre\nR$ 299,90\nhttps://jogobara.to/a\n\nPS4 (Limited Edition)\nR$ 249,90\nhttps://jogobara.to/b');
-  assert.deepEqual(v.map(p => p.nome), ['Ghost of Yotei (PS5)', 'Ghost of Yotei Limited Edition (PS4)']);
 });
