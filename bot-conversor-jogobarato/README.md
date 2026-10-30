@@ -26,9 +26,7 @@ A arte do Jogo Barato segue o conversor em HTML do Jogo Barato: mesmo fundo (`as
 
 **Tirar fundo (remove.bg):** com `REMOVEBG_API_KEY` configurado, a arte feita com uma imagem só (foto da oferta, banco ou link) ganha o botão **✂️ Tirar fundo**. Ele manda a imagem pro remove.bg, refaz a arte com os itens recortados no quadro branco e troca o botão por **↩️ Voltar o fundo**. Cada recorte em tamanho cheio gasta 1 crédito da conta do remove.bg, por isso só roda quando alguém aperta. Trocar entre Jogo Barato e JB Indica refaz a arte com o fundo de volta.
 
-**🚀 Publicar (script do conversor em HTML):** com `SF_SCRIPT_URL` e `SF_SCRIPT_SENHA` configurados, a arte ganha o botão **🚀 Publicar**. Ele usa o mesmo script do Google do conversor em HTML: mostra as campanhas do WhatsApp (SendFlow) e as redes conectadas (Bluesky, Threads, Facebook, X) para marcar, o intervalo entre grupos, e pede confirmação antes de publicar. O WhatsApp recebe a arte com o texto completo (com rodapé); cada rede recebe um texto curto feito como no conversor em HTML (Bluesky até 300 caracteres, Threads até 500). Depois o bot responde com o resultado de cada destino e salva a oferta no histórico da equipe, com os posts para apagar depois. A senha é a de quem publica no conversor em HTML: o que o bot publicar aparece no histórico dessa pessoa. Só funciona com `ALLOWED_USERS` preenchido. `/sendflow` mostra a configuração, as campanhas e as redes.
-
-**Envio pro WhatsApp pela API do SendFlow (sem o script):** com `SENDFLOW_API_KEY` configurado, a resposta ganha o botão **📲 Enviar nos grupos do ...**. Ele manda a arte com o texto do WhatsApp na legenda (ou só o texto, se não tiver arte) pros grupos do lançamento do rodapé escolhido: `SENDFLOW_LANCAMENTO_JB` para o Jogo Barato e `SENDFLOW_LANCAMENTO_INDICA` para o JB Indica. O bot pede confirmação com o número de grupos antes de enviar, e depois marca a oferta como enviada para não sair duas vezes. Só funciona com `ALLOWED_USERS` preenchido. Mande `/sendflow` para o bot para ver o que falta configurar e os IDs dos lançamentos. O SendFlow baixa a arte pelo endereço `/arte/...` do próprio bot, que só entrega imagens com assinatura.
+**Envio pro WhatsApp (SendFlow):** com `SENDFLOW_API_KEY` configurado, a resposta ganha o botão **📲 Enviar nos grupos do ...**. Ele manda a arte com o texto do WhatsApp na legenda (ou só o texto, se não tiver arte) pros grupos do lançamento do rodapé escolhido: `SENDFLOW_LANCAMENTO_JB` para o Jogo Barato e `SENDFLOW_LANCAMENTO_INDICA` para o JB Indica. O bot pede confirmação com o número de grupos antes de enviar, e depois marca a oferta como enviada para não sair duas vezes. Só funciona com `ALLOWED_USERS` preenchido. Mande `/sendflow` para o bot para ver o que falta configurar e os IDs dos lançamentos. O SendFlow baixa a arte pelo endereço `/arte/...` do próprio bot, que só entrega imagens com assinatura.
 
 Comandos: `/ajuda`, `/id` (mostra seu ID do Telegram), `/sendflow` (configuração do envio pro WhatsApp), `/lista` (monta uma lista de várias ofertas) e `/banco` (confere o banco de capas e atualiza a lista; `/banco nome do jogo` mostra as capas que combinam, com ✅ na que a arte usaria).
 
@@ -42,7 +40,6 @@ Comandos: `/ajuda`, `/id` (mostra seu ID do Telegram), `/sendflow` (configuraç�
    - `YOURLS_SIGNATURE` (opcional): token do YOURLS para encurtar os links.
    - `ALLOWED_USERS` (opcional): IDs de quem pode usar, separados por vírgula. Sem isso, qualquer pessoa que achar o bot consegue usar.
    - `REMOVEBG_API_KEY` (opcional): botão de tirar o fundo da foto pelo remove.bg (chave em remove.bg > API Keys).
-   - `SF_SCRIPT_URL`, `SF_SCRIPT_SENHA` (opcional): botão 🚀 Publicar pelo script do conversor em HTML (WhatsApp, redes e histórico). Com eles, o botão do SendFlow abaixo some.
    - `SENDFLOW_API_KEY`, `SENDFLOW_LANCAMENTO_JB`, `SENDFLOW_LANCAMENTO_INDICA` (opcional): envio pros grupos do WhatsApp pelo SendFlow.
    - `BANCO_DRIVE_PASTA` e `BANCO_DRIVE_CHAVE` (opcional): o ID da pasta do banco de capas no Google Drive e a chave da API do Google que lê a pasta (os mesmos do conversor em HTML). `BANCO_PAISES` (opcional) muda a ordem de preferência dos países.
 4. Faça o deploy (ou **Redeploy** depois de colocar as variáveis).
@@ -62,6 +59,5 @@ npm test
 - `lib/arte.js`: monta a arte da oferta (satori + resvg).
 - `api/setup.js`: liga o webhook e cadastra os comandos.
 - `lib/lista.js`: monta o texto do `/lista`.
-- `lib/script.js`: publicação pelo script do Google (WhatsApp, redes, histórico) e texto curto das redes.
 - `lib/sendflow.js`: envio pros grupos do WhatsApp pelo SendFlow.
 - `api/imagem.js`: entrega a arte pro SendFlow baixar (endereço com assinatura).

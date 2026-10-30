@@ -10,9 +10,7 @@
 //    Com o banco de capas ligado, a capa vem do Google Drive pelo nome do jogo, e
 //    oferta com vários jogos vira colagem (lib/capas.js).
 // 5. Links de lojas viram links jogobara.to (YOURLS), se YOURLS_SIGNATURE estiver configurado.
-// 6. Com o script do Google configurado (lib/script.js), o botão "🚀 Publicar" manda a arte
-//    pras campanhas do WhatsApp (SendFlow), Bluesky, Threads, Facebook e X, e registra no
-//    histórico da equipe. Sem ele, com a API do SendFlow, o botão "Enviar nos grupos" manda pro WhatsApp.
+// 6. Com o SendFlow configurado, o botão "Enviar nos grupos" manda a oferta pro WhatsApp.
 import { converter, sentidoPadrao, semRodape, GRUPOS } from '../lib/conversor.js';
 import { tg, baixarArquivo, enviarFoto, trocarFoto, linkPublicoDaFoto } from '../lib/telegram.js';
 import { removeBgLigado, tirarFundo } from '../lib/fundo.js';
@@ -23,8 +21,6 @@ import { limparLinks } from '../lib/limpeza.js';
 import { bancoLigado, listarBanco, paises, consultaDe, buscarNoBanco, escolherDoBanco } from '../lib/banco.js';
 import { encurtadorLigado, encurtar, deveEncurtar, linksEmOrdem, trocarLinks } from '../lib/encurtador.js';
 import { sendflowLigado, lancamentoDoGrupo, lancamentos, prepararEnvio, enviarProsGrupos } from '../lib/sendflow.js';
-import { scriptLigado, entrar, campanhas, redesConectadas, REDES, textoPlano, textoCurto, publicar, registrarNoHistorico } from '../lib/script.js';
-import { produtosDoTexto } from '../lib/produtos.js';
 
 const LIMITE_LEGENDA = 1024;
 const LIMITE_TEXTO = 4096;
@@ -40,7 +36,7 @@ Como usar:
 • Pra trocar a capa, responda à arte com outra foto. Mandando várias fotos de uma vez (álbum), com a oferta ou respondendo à arte, a arte vira uma colagem com todas.
 • Com o banco de capas ligado, eu acho a capa do jogo no Google Drive pelo nome, e oferta com vários jogos vira colagem. /banco mostra a configuração e "/banco nome do jogo" mostra o que eu acho.
 • /lista monta uma lista de várias ofertas: mande /lista na primeira linha e, embaixo, cada oferta separada por uma linha em branco (nome, cupom, link, preços e "Frete Grátis", em qualquer ordem). Eu coloco os emojis, ordeno do menor para o maior preço e faço a arte. Serve também para colar uma oferta copiada de outro grupo, que sai no padrão do Jogo Barato. Mande /lista sozinho para ver um exemplo.
-• Com o script de envio ligado, o botão 🚀 Publicar manda a arte pras campanhas do WhatsApp e pras redes (Bluesky, Threads, Facebook, X) que você marcar, e guarda no histórico da equipe. Antes de enviar ele pede confirmação. /sendflow mostra a configuração.
+• Com o SendFlow ligado, o botão 📲 manda a arte e o texto pros grupos do WhatsApp do rodapé escolhido (pede confirmação antes). /sendflow mostra a configuração.
 
 No WhatsApp, os *asteriscos* viram negrito e os _sublinhados_ viram itálico quando você cola o texto.`;
 
@@ -76,9 +72,7 @@ function teclado(destino, grupo, { comArte = false, enviados = '', zap, fundo = 
   if (comArte) linhas.push([{ text: '🖼 Gerar arte', callback_data: `arte|${destino}|${grupo}` }]);
   if (fundo === 'tirar' && removeBgLigado()) linhas.push([{ text: '✂️ Tirar fundo', callback_data: `fundo|${destino}|${grupo}` }]);
   if (fundo === 'voltar') linhas.push([{ text: '↩️ Voltar o fundo', callback_data: `comfundo|${destino}|${grupo}` }]);
-  // "zap" é uma linha de botões ou várias (a escolha dos destinos do Publicar)
-  if (zap) linhas.push(...(Array.isArray(zap[0]) ? zap : [zap]));
-  else if (scriptLigado()) linhas.push([{ text: '🚀 Publicar', callback_data: 'pb|a' }]);
+  if (zap) linhas.push(zap);
   else if (sendflowLigado() && GRUPOS[grupo]) {
     const fim = `|${destino}|${grupo}|${enviados}`;
     linhas.push(enviados.split('.').includes(grupo)
@@ -108,13 +102,6 @@ function grupoMarcado(markup) {
   const linha = (markup && markup.inline_keyboard && markup.inline_keyboard[0]) || [];
   const b = linha.find(x => (x.text || '').startsWith('✅') && x.callback_data);
   return b ? b.callback_data.split('|').pop() : 'jb';
-}
-
-// Qual destino está marcado (✅): 'wa' ou 'tg'
-function destinoMarcado(markup) {
-  const linha = (markup && markup.inline_keyboard && markup.inline_keyboard[1]) || [];
-  const b = linha.find(x => (x.text || '').startsWith('✅') && x.callback_data);
-  return b ? b.callback_data.split('|')[0] : 'wa';
 }
 
 // Texto da mensagem, já sem o rodapé que ela possa ter trazido
@@ -608,137 +595,9 @@ async function zap(cb, partes, original, host) {
   }
 }
 
-// ---------- 🚀 Publicar (script do Google) ----------
-// A escolha dos destinos fica nos próprios botões: "pb|ação|campanhas|redes|velocidade",
-// com as campanhas e as redes marcadas como bits (campanhas na ordem do script, redes na de REDES).
-const VELOCIDADES = [['none', 'sem intervalo'], ['fast', 'rápido'], ['normal', 'normal'], ['slow', 'lento']];
-const NOMES_REDES = Object.keys(REDES);
-// A última escolha de cada chat e rodapé, enquanto a função estiver de pé
-const ULTIMA_ESCOLHA = new Map();
-const bits = n => n.toString(36);
-const temBit = (m, i) => Boolean(m & (1 << i));
-
-function tecladoPublicar(destino, grupo, opcoes, lista, redes, c, r, v) {
-  const marca = (on, txt) => (on ? '☑️ ' : '⬜ ') + txt;
-  const dados = (acao, c2 = c, r2 = r, v2 = v) => `pb|${acao}|${bits(c2)}|${bits(r2)}|${v2}`;
-  const linhas = [];
-  lista.forEach((camp, i) => linhas.push([{ text: marca(temBit(c, i), '📲 ' + camp.nome), callback_data: dados('c', c ^ (1 << i)) }]));
-  if (lista.length) linhas.push([{ text: '⏱ Intervalo entre grupos: ' + VELOCIDADES[v][1], callback_data: dados('v', c, r, (v + 1) % VELOCIDADES.length) }]);
-  const botoesRedes = redes.map(nome => {
-    const i = NOMES_REDES.indexOf(nome);
-    return { text: marca(temBit(r, i), REDES[nome].nome), callback_data: dados('r', c, r ^ (1 << i)) };
-  });
-  for (let i = 0; i < botoesRedes.length; i += 2) linhas.push(botoesRedes.slice(i, i + 2));
-  const n = lista.filter((_, i) => temBit(c, i)).length + redes.filter(nome => temBit(r, NOMES_REDES.indexOf(nome))).length;
-  linhas.push([
-    { text: n ? `🚀 Publicar em ${n} destino${n > 1 ? 's' : ''}` : 'Marque um destino', callback_data: dados('p') },
-    { text: 'Cancelar', callback_data: dados('x') }
-  ]);
-  return teclado(destino, grupo, { ...opcoes, zap: linhas });
-}
-
-// Texto curto de cada rede, a partir do texto do WhatsApp sem o rodapé
-function textosDasRedes(c, redes) {
-  const plano = textoPlano(converter({ texto: c.texto, entities: c.entities, destino: 'wa', grupo: 'sem' }));
-  const produtos = produtosDoTexto(c.texto).map(p => ({ nome: p.nome, precoTxt: 'R$ ' + p.preco, bloco: p.bloco }));
-  return Object.fromEntries(redes.map(rede => [rede, textoCurto(plano, REDES[rede].max, produtos)]));
-}
-
-async function publicarBotao(cb, partes, original) {
-  const [, acao, cTxt = '0', rTxt = '0', vTxt = '0'] = partes;
-  let c = parseInt(cTxt, 36) || 0, r = parseInt(rTxt, 36) || 0;
-  const v = Math.min(parseInt(vTxt, 10) || 0, VELOCIDADES.length - 1);
-  const resposta = cb.message;
-  const chat_id = resposta.chat.id;
-  const markup = resposta.reply_markup;
-  const destino = destinoMarcado(markup), grupo = grupoMarcado(markup);
-  const opcoes = { comArte: temBotaoArte(markup), enviados: enviadosDe(markup), fundo: fundoDe(markup) };
-  const avisar = (text, show_alert = false) => tg('answerCallbackQuery', { callback_query_id: cb.id, text, show_alert });
-  const trocarTeclado = reply_markup => tg('editMessageReplyMarkup', { chat_id, message_id: resposta.message_id, reply_markup }).catch(e => {
-    if (!/not modified/i.test(e.descricao || '')) throw e;
-  });
-
-  if (!podeDisparar(cb.from.id)) {
-    return avisar('Pra publicar, o bot precisa estar fechado só pra equipe: coloque os IDs em ALLOWED_USERS na Vercel.', true);
-  }
-  if (acao === 'x') {
-    await trocarTeclado(teclado(destino, grupo, opcoes));
-    return avisar('Publicação cancelada.');
-  }
-  const foto = resposta.photo && resposta.photo[resposta.photo.length - 1];
-  if (!foto) return avisar('Publico só a arte: toque em 🖼 Gerar arte e use o 🚀 Publicar da arte.', true);
-
-  let lista, redes;
-  try {
-    [lista, redes] = await Promise.all([campanhas(), entrar().then(redesConectadas)]);
-  } catch (e) {
-    console.error(e);
-    return avisar('Não consegui falar com o script de envio: ' + e.message, true);
-  }
-  const chave = `${chat_id}|${grupo}`;
-  if (acao === 'a') {
-    // Abre a escolha com o que foi marcado da última vez neste rodapé
-    const ultima = ULTIMA_ESCOLHA.get(chave);
-    if (ultima) { c = ultima.c; r = ultima.r; }
-    await trocarTeclado(tecladoPublicar(destino, grupo, opcoes, lista, redes, c, r, ultima ? ultima.v : v));
-    return avisar(lista.length || redes.length ? 'Marque onde publicar.' : 'O script não tem campanhas nem redes conectadas.', !lista.length && !redes.length);
-  }
-  if (['c', 'r', 'v'].includes(acao)) {
-    await trocarTeclado(tecladoPublicar(destino, grupo, opcoes, lista, redes, c, r, v));
-    return avisar();
-  }
-  const ids = lista.filter((_, i) => temBit(c, i)).map(x => x.id);
-  const nomesCampanhas = lista.filter((_, i) => temBit(c, i)).map(x => x.nome);
-  const redesMarcadas = redes.filter(nome => temBit(r, NOMES_REDES.indexOf(nome)));
-  if (!ids.length && !redesMarcadas.length) return avisar('Marque pelo menos um destino.', true);
-  const para = (ids.length ? [`WhatsApp (${nomesCampanhas.join(', ')})`] : []).concat(redesMarcadas.map(n => REDES[n].nome)).join(' · ');
-  if (acao === 'p') {
-    // Confirmação: os mesmos bits seguem no botão de confirmar
-    const fim = `|${bits(c)}|${bits(r)}|${v}`;
-    await trocarTeclado(teclado(destino, grupo, {
-      ...opcoes,
-      zap: [[{ text: '✅ Confirmar e publicar', callback_data: 'pb|ok' + fim }], [{ text: 'Voltar', callback_data: 'pb|c' + fim }, { text: 'Cancelar', callback_data: 'pb|x' + fim }]]
-    }));
-    return avisar(('Vai para: ' + para).slice(0, 190), true);
-  }
-  if (acao !== 'ok') return avisar();
-
-  // ok: publica a arte com o texto do WhatsApp (com rodapé) e os textos curtos das redes
-  ULTIMA_ESCOLHA.set(chave, { c, r, v });
-  await avisar('Publicando...');
-  await trocarTeclado(teclado(destino, grupo, opcoes));
-  const responder = text => tg('sendMessage', { chat_id, text, reply_parameters: { message_id: resposta.message_id, allow_sending_without_reply: true }, link_preview_options: { is_disabled: true } });
-  try {
-    const { c: cont, saida } = await montar(original, 'wa', grupo, resposta);
-    const jpeg = await baixarArquivo(foto.file_id);
-    const textos = textosDasRedes(cont, redesMarcadas);
-    const { resultados, posts } = await publicar({
-      jpeg, legenda: saida, textos, alt: dadosDaOferta(cont.texto).titulo || 'Imagem da promoção',
-      destinos: { campanhas: ids, velocidade: VELOCIDADES[v][0], redes: redesMarcadas }
-    });
-    const linhas = resultados.map(x => (x.ok ? '✓ ' : '✗ ') + x.texto + (x.link ? ' · ' + x.link : ''));
-    const tudoOk = resultados.every(x => x.ok);
-    let hist = '';
-    if (resultados.some(x => x.ok)) {
-      try {
-        await registrarNoHistorico({ entrada: cont.texto, saida, rodape: grupo === 'ind' ? 'ind' : 'jb', posts, jpeg });
-        hist = '\n\nSalvo no histórico da equipe.';
-      } catch (e) {
-        console.error(e);
-        hist = '\n\nNão consegui salvar no histórico: ' + e.message;
-      }
-    }
-    await responder((tudoOk ? '🚀 Publicado!' : '⚠️ Alguns destinos não receberam:') + '\n' + linhas.join('\n') + hist);
-  } catch (e) {
-    console.error(e);
-    await responder('Não consegui publicar.\nMotivo: ' + e.message);
-  }
-}
-
 // /sendflow: mostra o que falta configurar e os lançamentos da conta, com os IDs
 async function statusSendflow(chatId) {
   const ok = v => (v ? '✅' : '❌');
-  if (scriptLigado() || !sendflowLigado()) return statusScript(chatId);
   const linhas = [
     'Envio pro WhatsApp (SendFlow)',
     `${ok(sendflowLigado())} Chave da API (SENDFLOW_API_KEY)`,
@@ -753,29 +612,6 @@ async function statusSendflow(chatId) {
       for (const r of lista.slice(0, 30)) linhas.push(`• ${r.name || r.title || 'sem nome'}: ${r.id}`);
     } catch (e) {
       linhas.push('', 'Não consegui ler os lançamentos.', 'Motivo: ' + e.message);
-    }
-  }
-  await tg('sendMessage', { chat_id: chatId, text: linhas.join('\n') });
-}
-
-// Configuração do script de envio: quem publica, campanhas e redes conectadas
-async function statusScript(chatId) {
-  const ok = v => (v ? '✅' : '❌');
-  const linhas = [
-    'Publicação (script do conversor em HTML)',
-    `${ok(process.env.SF_SCRIPT_URL)} Endereço do script (SF_SCRIPT_URL)`,
-    `${ok(process.env.SF_SCRIPT_SENHA)} Senha de quem publica (SF_SCRIPT_SENHA)`,
-    `${ok(equipe().length)} Equipe fechada (ALLOWED_USERS)`
-  ];
-  if (scriptLigado()) {
-    try {
-      const [j, lista] = await Promise.all([entrar({ atualizar: true }), campanhas({ atualizar: true })]);
-      const redes = redesConectadas(j);
-      linhas.push('', `Publicando como: ${j.membro ? j.membro.nome : '?'}${j.historico ? ' (com histórico)' : ''}`);
-      linhas.push(lista.length ? 'Campanhas do WhatsApp: ' + lista.map(x => x.nome).join(', ') : 'Nenhuma campanha do WhatsApp.');
-      linhas.push('Redes conectadas: ' + (redes.length ? redes.map(r => REDES[r].nome).join(', ') : 'nenhuma'));
-    } catch (e) {
-      linhas.push('', 'Não consegui falar com o script.', 'Motivo: ' + e.message);
     }
   }
   await tg('sendMessage', { chat_id: chatId, text: linhas.join('\n') });
@@ -822,7 +658,6 @@ async function botao(cb, host) {
     return;
   }
   if (partes[0].startsWith('zap')) return zap(cb, partes, original, host);
-  if (partes[0] === 'pb') return publicarBotao(cb, partes, original);
   if (ehArte) return arte(cb, original, destino, grupo);
   if (ehFundo) return fundo(cb, original, partes[0], destino, grupo);
   const { saida, parse_mode } = await montar(original, destino, grupo, resposta);
